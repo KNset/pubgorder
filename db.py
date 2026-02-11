@@ -98,11 +98,117 @@ def init_db():
             config JSONB
         );
     """)
+
+    # Games Table
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS games (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            is_active BOOLEAN DEFAULT TRUE
+        );
+    """)
+
+    # Game Packages Table
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS game_packages (
+            id SERIAL PRIMARY KEY,
+            game_id INTEGER REFERENCES games(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            price INTEGER NOT NULL
+        );
+    """)
+
+    # Check if PUBG exists, if not create it
+    cur.execute("SELECT id FROM games WHERE name = 'PUBG UC'")
+    if not cur.fetchone():
+        cur.execute("INSERT INTO games (name) VALUES ('PUBG UC') RETURNING id")
+        pubg_id = cur.fetchone()[0]
+        # Migrate existing 'packages' to 'game_packages' if needed?
+        # For now, let's keep 'packages' table for PUBG specifically to not break existing code immediately,
+        # OR we can migrate everything.
+        # Let's keep 'packages' for PUBG for backward compatibility for now, 
+        # but for NEW games we use 'game_packages'.
     
     conn.commit()
     cur.close()
     conn.close()
     print("Database initialized successfully.")
+
+# --- Game Functions ---
+
+def get_games():
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("SELECT * FROM games WHERE is_active = TRUE ORDER BY id ASC")
+    games = cur.fetchall()
+    cur.close()
+    conn.close()
+    return games
+
+def add_game(name):
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("INSERT INTO games (name) VALUES (%s) RETURNING id", (name,))
+        game_id = cur.fetchone()[0]
+        conn.commit()
+        success = True
+    except psycopg2.IntegrityError:
+        conn.rollback()
+        game_id = None
+        success = False
+    cur.close()
+    conn.close()
+    return game_id
+
+def delete_game(game_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM games WHERE id = %s", (game_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+# --- Game Package Functions ---
+
+def get_game_packages(game_id):
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("SELECT * FROM game_packages WHERE game_id = %s ORDER BY price ASC", (game_id,))
+    packages = cur.fetchall()
+    cur.close()
+    conn.close()
+    return packages
+
+def add_game_package(game_id, name, price):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO game_packages (game_id, name, price) VALUES (%s, %s, %s)", (game_id, name, price))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def delete_game_package(package_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM game_packages WHERE id = %s", (package_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def get_game_package_by_id(package_id):
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("""
+        SELECT gp.*, g.name as game_name 
+        FROM game_packages gp 
+        JOIN games g ON gp.game_id = g.id 
+        WHERE gp.id = %s
+    """, (package_id,))
+    pkg = cur.fetchone()
+    cur.close()
+    conn.close()
+    return pkg
 
 # --- API Config Functions ---
 

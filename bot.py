@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO)
 # --- [၃] Main Menu (Always Ready Buttons) ---
 def main_menu():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    markup.add("🛒 Buy UC", "💰 Add Funds", "👤 Wallet", "📜 History")
+    markup.add("🛒 Games", "💰 Add Funds", "👤 Wallet", "📜 History")
     return markup
 
 @bot.message_handler(commands=['start'])
@@ -128,13 +128,147 @@ def handle_ss(message, amount):
         bot.send_message(message.chat.id, "❌ Error sending request to admin. Please try again.")
 
 # --- [၆] Buy UC (With Confirmation Flow) ---
-@bot.message_handler(func=lambda m: m.text == "🛒 Buy UC")
+@bot.message_handler(func=lambda m: m.text == "🛒 Games")
 def shop_menu(message):
+    # Show Game Selection First
+    games = db.get_games()
+    
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    
+    # Existing PUBG UC (Legacy)
+    markup.add(types.InlineKeyboardButton("🎮 PUBG UC (Auto)", callback_data="game_pubg"))
+    
+    # New Games
+    for game in games:
+        if game['name'] != 'PUBG UC': # Skip if duplicate
+             markup.add(types.InlineKeyboardButton(f"🎮 {game['name']}", callback_data=f"game_id_{game['id']}"))
+             
+    bot.send_message(message.chat.id, "🛒 **Select Game:**", reply_markup=markup, parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda c: c.data == "game_pubg")
+def pubg_menu(call):
     uc_details = db.get_packages()
     markup = types.InlineKeyboardMarkup(row_width=1)
     for k, v in uc_details.items():
         markup.add(types.InlineKeyboardButton(f"🎮 {v['name']} - {v['price']} MMK", callback_data=f"pre_{k}"))
-    bot.send_message(message.chat.id, "ဝယ်ယူလိုသော Package ကို ရွေးချယ်ပါ -", reply_markup=markup)
+    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="back_to_games"))
+    bot.edit_message_text("👇 **PUBG UC Packages:**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda c: c.data == "back_to_games")
+def back_to_games(call):
+    games = db.get_games()
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton("🎮 PUBG UC (Auto)", callback_data="game_pubg"))
+    for game in games:
+        if game['name'] != 'PUBG UC':
+             markup.add(types.InlineKeyboardButton(f"🎮 {game['name']}", callback_data=f"game_id_{game['id']}"))
+    bot.edit_message_text("🛒 **Select Game:**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith('game_id_'))
+def new_game_menu(call):
+    gid = int(call.data.split('_')[2])
+    packages = db.get_game_packages(gid)
+    
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    if not packages:
+        markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="back_to_games"))
+        return bot.edit_message_text("❌ No packages available for this game yet.", call.message.chat.id, call.message.message_id, reply_markup=markup)
+        
+    for p in packages:
+        markup.add(types.InlineKeyboardButton(f"📦 {p['name']} - {p['price']} MMK", callback_data=f"buy_gp_{p['id']}"))
+    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="back_to_games"))
+    
+    bot.edit_message_text("👇 **Select Package:**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+# Buy New Game Package
+@bot.callback_query_handler(func=lambda c: c.data.startswith('buy_gp_'))
+def buy_game_package(call):
+    pid = int(call.data.split('_')[2])
+    pkg = db.get_game_package_by_id(pid)
+    
+    if not pkg:
+        return bot.answer_callback_query(call.id, "❌ Package Invalid", show_alert=True)
+        
+    uid = call.from_user.id
+    user = db.get_user(uid)
+    
+    # Confirm
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("✅ Buy Now", callback_data=f"confirm_gp_{pid}"),
+               types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_order"))
+               
+    text = (f"❓ **Confirm Purchase**\n\n"
+            f"🎮 Game: {pkg['game_name']}\n"
+            f"📦 Pack: {pkg['name']}\n"
+            f"💵 Price: {pkg['price']} MMK")
+            
+    bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith('confirm_gp_'))
+def confirm_game_package(call):
+    pid = int(call.data.split('_')[2])
+    pkg = db.get_game_package_by_id(pid)
+    uid = call.from_user.id
+    user = db.get_user(uid)
+    
+    if user['balance'] < pkg['price']:
+        return bot.answer_callback_query(call.id, "❌ Insufficient Balance", show_alert=True)
+        
+    # Ask for Payment Proof (Manual Process)
+    # Deduct balance immediately? Or wait for admin?
+    # Requirement says: "take user's payment screenshot and send to admin then admin approve"
+    # This implies user pays OUTSIDE of wallet balance? OR user tops up wallet first?
+    # Usually "take payment screenshot" means top-up.
+    # But if user uses wallet balance, we just deduct and notify admin to process order manually.
+    
+    # Let's assume Wallet Balance Flow (Consistent with existing logic):
+    # 1. Deduct Balance
+    # 2. Notify Admin to Process Order (Manual Delivery)
+    
+    db.update_balance(uid, -pkg['price'])
+    
+    # Ask for ID/Details
+    msg = bot.send_message(call.message.chat.id, f"🆔 **Enter Player ID / Account Details for {pkg['game_name']}:**")
+    bot.register_next_step_handler(msg, process_manual_order, pkg)
+    bot.delete_message(call.message.chat.id, call.message.message_id)
+
+def process_manual_order(message, pkg):
+    details = message.text
+    uid = message.from_user.id
+    
+    # Log to History
+    db.add_history(uid, f"{pkg['game_name']} - {pkg['name']}", "Pending")
+    
+    # Notify Admin
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("✅ Mark Done", callback_data=f"manual_done_{uid}"),
+               types.InlineKeyboardButton("❌ Refund", callback_data=f"manual_refund_{uid}_{pkg['price']}"))
+               
+    admin_msg = (f"🛒 **New Manual Order**\n"
+                 f"👤 User: {message.from_user.first_name} (ID: {uid})\n"
+                 f"🎮 Game: {pkg['game_name']}\n"
+                 f"📦 Pack: {pkg['name']}\n"
+                 f"📝 Details: `{details}`\n"
+                 f"💵 Paid: {pkg['price']} MMK")
+                 
+    bot.send_message(ADMIN_ID, admin_msg, reply_markup=markup, parse_mode="Markdown")
+    bot.send_message(uid, "✅ **Order Received!**\nAdmin will process it shortly.", parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith('manual_done_'))
+def manual_order_done(call):
+    uid = int(call.data.split('_')[2])
+    bot.send_message(uid, "🎉 **Your Order is Completed!**\nThank you for buying.")
+    bot.edit_message_caption(call.message.caption + "\n\n✅ **COMPLETED**", call.message.chat.id, call.message.message_id)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith('manual_refund_'))
+def manual_order_refund(call):
+    _, _, uid, price = call.data.split('_')
+    uid = int(uid)
+    price = int(price)
+    
+    db.update_balance(uid, price)
+    bot.send_message(uid, f"❌ **Order Cancelled & Refunded**\nAmount: {price} MMK")
+    bot.edit_message_caption(call.message.caption + "\n\n❌ **REFUNDED**", call.message.chat.id, call.message.message_id)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith('pre_'))
 def pre_purchase(call):
@@ -453,6 +587,7 @@ def admin_dashboard(message):
     markup.add(
         types.InlineKeyboardButton("📊 Check Stock", callback_data="admin_check_stock"),
         types.InlineKeyboardButton("📦 Manage Packages", callback_data="admin_manage_packages"),
+        types.InlineKeyboardButton("🎮 Manage Games", callback_data="admin_manage_games"),
         types.InlineKeyboardButton("➕ Add New Package", callback_data="admin_add_package"),
         types.InlineKeyboardButton("💳 Manage Payments", callback_data="admin_manage_payments"),
         types.InlineKeyboardButton("❌ Close", callback_data="admin_close")
@@ -491,11 +626,110 @@ def admin_back_main(call):
     markup.add(
         types.InlineKeyboardButton("📊 Check Stock", callback_data="admin_check_stock"),
         types.InlineKeyboardButton("📦 Manage Packages", callback_data="admin_manage_packages"),
+        types.InlineKeyboardButton("🎮 Manage Games", callback_data="admin_manage_games"),
         types.InlineKeyboardButton("➕ Add New Package", callback_data="admin_add_package"),
         types.InlineKeyboardButton("💳 Manage Payments", callback_data="admin_manage_payments"),
         types.InlineKeyboardButton("❌ Close", callback_data="admin_close")
     )
     bot.edit_message_text("🔧 **Admin Dashboard**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda c: c.data == "admin_manage_games")
+def admin_manage_games(call):
+    games = db.get_games()
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for g in games:
+        markup.add(types.InlineKeyboardButton(f"🎮 {g['name']}", callback_data=f"adm_game_{g['id']}"))
+    markup.add(types.InlineKeyboardButton("➕ Add New Game", callback_data="admin_add_game"))
+    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="admin_back_main"))
+    bot.edit_message_text("🎮 **Select Game to Manage:**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+# Add Game Flow
+@bot.callback_query_handler(func=lambda c: c.data == "admin_add_game")
+def admin_add_game_start(call):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    markup.add("❌ Cancel")
+    msg = bot.send_message(call.message.chat.id, "🎮 **Enter New Game Name (e.g., Free Fire):**", reply_markup=markup)
+    bot.register_next_step_handler(msg, admin_add_game_save)
+
+def admin_add_game_save(message):
+    if message.text == "❌ Cancel":
+        return bot.send_message(message.chat.id, "❌ Cancelled.", reply_markup=types.ReplyKeyboardRemove())
+    
+    name = message.text.strip()
+    if db.add_game(name):
+        bot.send_message(message.chat.id, f"✅ **Game Added:** {name}", reply_markup=types.ReplyKeyboardRemove())
+    else:
+        bot.send_message(message.chat.id, "❌ Failed. Game name already exists.", reply_markup=types.ReplyKeyboardRemove())
+
+# Manage Specific Game (Add Packages)
+@bot.callback_query_handler(func=lambda c: c.data.startswith('adm_game_'))
+def admin_game_detail(call):
+    gid = int(call.data.split('_')[2])
+    # For now, let's allow deleting game or adding packages
+    # Simplified: Just Delete for now or Add Package?
+    # Requirement: "bot will ask package name and price then this new game will appear on user side"
+    
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton("➕ Add Package", callback_data=f"adm_add_gp_{gid}"))
+    markup.add(types.InlineKeyboardButton("🗑 Delete Game", callback_data=f"adm_del_game_{gid}"))
+    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="admin_manage_games"))
+    
+    # Show packages
+    packages = db.get_game_packages(gid)
+    report = f"🎮 **Game ID:** `{gid}`\n📦 **Packages:**\n"
+    if packages:
+        for p in packages:
+            report += f"- {p['name']} ({p['price']} MMK) /del_gp_{p['id']}\n"
+    else:
+        report += "(No packages yet)"
+        
+    bot.edit_message_text(report, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith('adm_del_game_'))
+def admin_delete_game(call):
+    gid = int(call.data.split('_')[3])
+    db.delete_game(gid)
+    bot.answer_callback_query(call.id, "✅ Game Deleted", show_alert=True)
+    admin_manage_games(call)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith('adm_add_gp_'))
+def admin_add_game_package_start(call):
+    gid = int(call.data.split('_')[3])
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    markup.add("❌ Cancel")
+    msg = bot.send_message(call.message.chat.id, "📦 **Enter Package Name (e.g., 100 Diamonds):**", reply_markup=markup)
+    bot.register_next_step_handler(msg, admin_add_gp_price, gid)
+
+def admin_add_gp_price(message, gid):
+    if message.text == "❌ Cancel":
+        return bot.send_message(message.chat.id, "❌ Cancelled.", reply_markup=types.ReplyKeyboardRemove())
+    name = message.text.strip()
+    
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    markup.add("❌ Cancel")
+    msg = bot.send_message(message.chat.id, f"💵 **Enter Price for {name}:**", reply_markup=markup)
+    bot.register_next_step_handler(msg, admin_add_gp_save, gid, name)
+
+def admin_add_gp_save(message, gid, name):
+    if message.text == "❌ Cancel":
+        return bot.send_message(message.chat.id, "❌ Cancelled.", reply_markup=types.ReplyKeyboardRemove())
+    
+    if not message.text.isdigit():
+        return bot.send_message(message.chat.id, "❌ Invalid Price.", reply_markup=types.ReplyKeyboardRemove())
+        
+    price = int(message.text)
+    db.add_game_package(gid, name, price)
+    bot.send_message(message.chat.id, f"✅ **Package Added!**\n{name} - {price} MMK", reply_markup=types.ReplyKeyboardRemove())
+
+@bot.message_handler(commands=['del_gp']) # Quick delete for game packages
+def delete_gp_command(message):
+    if message.from_user.id != ADMIN_ID: return
+    try:
+        pid = int(message.text.split('_')[1])
+        db.delete_game_package(pid)
+        bot.reply_to(message, "✅ Package Deleted")
+    except:
+        pass
 
 @bot.callback_query_handler(func=lambda c: c.data == "admin_manage_payments")
 def admin_manage_payments(call):
