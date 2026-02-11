@@ -128,11 +128,64 @@ def init_db():
         # OR we can migrate everything.
         # Let's keep 'packages' for PUBG for backward compatibility for now, 
         # but for NEW games we use 'game_packages'.
-    
+    # Admins Table
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS admins (
+            user_id BIGINT PRIMARY KEY,
+            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+
+    # Seed initial admin if empty (from config)
+    # This is a bit tricky because we don't know the ID here unless passed.
+    # But bot.py handles the main admin ID.
+    # Let's add a function to ensure main admin exists.
+
     conn.commit()
     cur.close()
     conn.close()
     print("Database initialized successfully.")
+
+# --- Admin Functions ---
+
+def is_admin(user_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM admins WHERE user_id = %s", (user_id,))
+    exists = cur.fetchone() is not None
+    cur.close()
+    conn.close()
+    return exists
+
+def add_admin(user_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("INSERT INTO admins (user_id) VALUES (%s) ON CONFLICT DO NOTHING", (user_id,))
+        conn.commit()
+        success = True
+    except:
+        success = False
+    cur.close()
+    conn.close()
+    return success
+
+def remove_admin(user_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM admins WHERE user_id = %s", (user_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def get_all_admins():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id FROM admins")
+    admins = [row[0] for row in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return admins
 
 # --- Game Functions ---
 

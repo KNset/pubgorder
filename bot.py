@@ -10,8 +10,12 @@ import json
 
 # --- [၁] Configuration ---
 API_TOKEN = '8591995558:AAH-_Fb-iCJ-ANeEiD8oqr0Qts3JlW8qStA'
-ADMIN_ID = 1278018722
+ADMIN_ID = 1278018722 # Main Owner
 bot = telebot.TeleBot(API_TOKEN)
+
+def is_admin(user_id):
+    # Check if Main Owner OR in Database
+    return user_id == ADMIN_ID or db.is_admin(user_id)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -20,6 +24,40 @@ def main_menu():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add("🛒 Games", "💰 Add Funds", "👤 Wallet", "📜 History")
     return markup
+
+@bot.message_handler(commands=['addadmin'])
+def admin_add_new_admin(message):
+    if message.from_user.id != ADMIN_ID: return # Only Main Owner can add admins
+    
+    try:
+        new_admin_id = int(message.text.split()[1])
+        if db.add_admin(new_admin_id):
+            bot.reply_to(message, f"✅ User {new_admin_id} is now an Admin!")
+        else:
+            bot.reply_to(message, "⚠️ User is already an Admin.")
+    except:
+        bot.reply_to(message, "⚠️ Usage: `/addadmin [USER_ID]`")
+
+@bot.message_handler(commands=['deladmin'])
+def admin_remove_admin(message):
+    if message.from_user.id != ADMIN_ID: return # Only Main Owner can remove admins
+    
+    try:
+        target_id = int(message.text.split()[1])
+        db.remove_admin(target_id)
+        bot.reply_to(message, f"✅ User {target_id} removed from Admins.")
+    except:
+        bot.reply_to(message, "⚠️ Usage: `/deladmin [USER_ID]`")
+
+@bot.message_handler(commands=['admins'])
+def list_admins(message):
+    if message.from_user.id != ADMIN_ID: return
+    
+    admins = db.get_all_admins()
+    text = f"👑 **Main Owner:** `{ADMIN_ID}`\n\n👮 **Admins:**\n"
+    for a in admins:
+        text += f"- `{a}`\n"
+    bot.reply_to(message, text, parse_mode="Markdown")
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -380,7 +418,7 @@ def final_process(call):
 # --- [၇] Admin Controls (Add Stock & Approval) ---
 @bot.message_handler(commands=['add'])
 def admin_add_stock(message):
-    if message.from_user.id != ADMIN_ID: return
+    if not is_admin(message.from_user.id): return
     
     args = message.text.split()[1:]
     
@@ -415,7 +453,7 @@ def admin_add_stock(message):
 
 @bot.message_handler(commands=['checkstock'])
 def admin_check_stock(message):
-    if message.from_user.id != ADMIN_ID: return
+    if not is_admin(message.from_user.id): return
     uc_details = db.get_packages()
     report = "📦 **လက်ရှိ Stock စာရင်း**\n"
     for k, v in uc_details.items():
@@ -440,7 +478,7 @@ def admin_approval(call):
 
 @bot.message_handler(commands=['setcookies'])
 def admin_set_cookies(message):
-    if message.from_user.id != ADMIN_ID: return
+    if not is_admin(message.from_user.id): return
     
     # Check if message is too long or split (Telegram splits long messages)
     # But here we only get one message object.
@@ -552,7 +590,7 @@ def admin_set_cookies(message):
 
 @bot.message_handler(content_types=['document'])
 def admin_upload_cookies_file(message):
-    if message.from_user.id != ADMIN_ID: return
+    if not is_admin(message.from_user.id): return
     
     is_cookie_file = message.document.file_name.endswith('.json') or (message.caption and '/setcookies' in message.caption)
     
@@ -582,7 +620,7 @@ def admin_upload_cookies_file(message):
 
 @bot.message_handler(commands=['admin'])
 def admin_dashboard(message):
-    if message.from_user.id != ADMIN_ID: return
+    if not is_admin(message.from_user.id): return
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
         types.InlineKeyboardButton("📊 Check Stock", callback_data="admin_check_stock"),
@@ -723,7 +761,7 @@ def admin_add_gp_save(message, gid, name):
 
 @bot.message_handler(commands=['del_gp']) # Quick delete for game packages
 def delete_gp_command(message):
-    if message.from_user.id != ADMIN_ID: return
+    if not is_admin(message.from_user.id): return
     try:
         pid = int(message.text.split('_')[1])
         db.delete_game_package(pid)
