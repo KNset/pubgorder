@@ -391,8 +391,11 @@ def execute_purchase(call):
         f"✅ **Thank You for Purchasing!**\n\n"
         f"📦 Package: **{package_name}**\n"
         f"🎟 Redeem Code: `{code}`\n\n"
-        f"💰 Price: `{price} MMK`\n"
-        f"ℹ️ Copy the code and redeem it yourself."
+        f"💰 Price: `{price} MMK`\n\n"
+        f"၁။ Midasbuy Link ( `https://www.midasbuy.com/midasbuy/ot/redeem/pubgm` )  သိုသွားပါ။ \n"
+        f"၂။ သင့်ရဲ့ Player ID ကိုရိုက်ထည့်ပါ။ \n"
+        f"၃။ ဝယ်ယူထားသော Code ကိုထည့်ပြီး 'OK' နှိပ်ပါ။ \n\n"
+        f"⚠️ Code ကိုတစ်ကြိမ်သာ အသုံးပြုနိုင်ပါသည်။"
     )
     bot.send_message(uid, success_msg, parse_mode="Markdown")
     
