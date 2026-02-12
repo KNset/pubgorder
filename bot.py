@@ -435,6 +435,10 @@ def final_process(call):
         for admin_id in admin_ids:
             try:
                 bot.send_message(admin_id, f"🛒 **Auto-Topup Success**\n👤 User: @{call.from_user.username}\n🆔 UID: `{player_id}`\n📦 Pack: {uc_details[pk]['name']}\n🎟 Code Used: `{code}`")
+                # Send Screenshot if available
+                if result.get('screenshot') and os.path.exists(result['screenshot']):
+                    with open(result['screenshot'], 'rb') as photo:
+                        bot.send_photo(admin_id, photo, caption="📸 Proof of Success")
             except: pass
     else:
         # Failed - Refund and Notify Admin
@@ -449,6 +453,10 @@ def final_process(call):
         for admin_id in admin_ids:
             try:
                 bot.send_message(admin_id, f"⚠️ **Auto-Topup FAILED**\n👤 User: @{call.from_user.username}\n🆔 UID: `{player_id}`\n🎟 Code: `{code}`\n❌ Reason: {result['message']}\nℹ️ Code was consumed from DB but User refunded.")
+                # Send Screenshot if available
+                if result.get('screenshot') and os.path.exists(result['screenshot']):
+                    with open(result['screenshot'], 'rb') as photo:
+                        bot.send_photo(admin_id, photo, caption="📸 Error Screenshot")
             except: pass
 
 # --- [၇] Admin Controls (Add Stock & Approval) ---

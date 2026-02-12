@@ -279,6 +279,138 @@ def redeem_code(player_id, code):
                 }
             }""")
             time.sleep(3) # Increased delay after clicking Redeem OK
+
+            # ------------------------------------------------------------------
+            # CAPTCHA HANDLING START
+            # ------------------------------------------------------------------
+            logger.info("🛡️ Checking for Captcha (Slider)...")
+            
+            # Try to detect iframe with captcha
+            # Midasbuy/Tencent Captcha usually loads in an iframe with src containing 'captcha' or 't-captcha'
+            # We need to wait a bit to see if it appears
+            time.sleep(2)
+            
+            captcha_iframe = None
+            try:
+                # Find all iframes
+                frames = page.frames
+                for frame in frames:
+                    if 'captcha' in frame.url or 't-captcha' in frame.url:
+                        captcha_iframe = frame
+                        break
+            except: pass
+            
+            if captcha_iframe:
+                logger.info("⚠️ Captcha Iframe Detected! Attempting to solve...")
+                try:
+                    # Import here to avoid dependency if not used
+                    import cv2
+                    import numpy as np
+                    import requests
+                    
+                    # 1. Get Images
+                    # We need to find the background and the slider block
+                    # Selectors might vary, usually #slideBg and #slideBlock
+                    
+                    # Wait for images to load
+                    try:
+                        captcha_iframe.wait_for_selector('#slideBg', timeout=5000)
+                    except:
+                        logger.warning("⚠️ Captcha images not found (timeout)")
+                    
+                    # Get bounding box of the background to know the scale
+                    bg_box = captcha_iframe.locator('#slideBg').bounding_box()
+                    
+                    # Get image sources (base64 or url)
+                    bg_src = captcha_iframe.eval_on_selector('#slideBg', 'el => el.src')
+                    block_src = captcha_iframe.eval_on_selector('#slideBlock', 'el => el.src')
+                    
+                    if bg_src and block_src:
+                        logger.info("✅ Captcha images retrieved. Processing...")
+                        # Helper to load image from url/base64
+                        def load_image(src):
+                            if src.startswith('data:image'):
+                                import base64
+                                encoded_data = src.split(',')[1]
+                                nparr = np.frombuffer(base64.b64decode(encoded_data), np.uint8)
+                            else:
+                                resp = requests.get(src)
+                                nparr = np.frombuffer(resp.content, np.uint8)
+                            return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+                        bg_img = load_image(bg_src)
+                        block_img = load_image(block_src)
+                        
+                        # 2. Image Processing to find offset
+                        # Convert to grayscale
+                        bg_gray = cv2.cvtColor(bg_img, cv2.COLOR_BGR2GRAY)
+                        block_gray = cv2.cvtColor(block_img, cv2.COLOR_BGR2GRAY)
+                        
+                        # Apply Canny Edge Detection
+                        bg_edges = cv2.Canny(bg_gray, 100, 200)
+                        block_edges = cv2.Canny(block_gray, 100, 200)
+                        
+                        # Match Template
+                        result = cv2.matchTemplate(bg_edges, block_edges, cv2.TM_CCOEFF_NORMED)
+                        _, _, _, max_loc = cv2.minMaxLoc(result)
+                        target_x = max_loc[0]
+                        
+                        logger.info(f"🧩 Captcha Solution Found: Offset {target_x}")
+                        
+                        # 3. Calculate Drag Distance
+                        # We need to scale the target_x based on the actual rendered size vs natural size
+                        natural_width = bg_img.shape[1]
+                        rendered_width = bg_box['width']
+                        scale = rendered_width / natural_width
+                        
+                        final_x_offset = target_x * scale
+                        
+                        # 4. Perform Drag
+                        # Find the slider knob (handle)
+                        slider_knob = captcha_iframe.locator('.tcap-slide-btn') # Common class, might vary
+                        if slider_knob.count() == 0:
+                             slider_knob = captcha_iframe.locator('#tcap_slide_btn')
+                        
+                        if slider_knob.count() > 0:
+                            box = slider_knob.bounding_box()
+                            if box:
+                                start_x = box['x'] + box['width'] / 2
+                                start_y = box['y'] + box['height'] / 2
+                                
+                                # Move mouse to start
+                                page.mouse.move(start_x, start_y)
+                                page.mouse.down()
+                                
+                                # Move to target (Human-like movement could be better, but linear for now)
+                                # We need to move relative to the iframe position? 
+                                # Playwright handles coordinates globally usually.
+                                
+                                # Important: The offset is relative to the start position of the slider track?
+                                # Usually we just move by final_x_offset pixels to the right
+                                
+                                # Let's move in steps
+                                steps = 20
+                                for i in range(steps):
+                                    page.mouse.move(start_x + (final_x_offset * (i+1)/steps), start_y + (i % 2)) # slight y jitter
+                                    time.sleep(0.05) # slow drag
+                                
+                                page.mouse.up()
+                                logger.info("✅ Captcha Drag Completed")
+                                time.sleep(3) # Wait for verification
+                                
+                    else:
+                        logger.warning("⚠️ Could not get captcha image sources")
+                                
+                except Exception as e:
+                    logger.error(f"❌ Failed to solve captcha: {e}")
+                    # Don't return false yet, maybe it wasn't mandatory or we failed but can retry?
+                    pass
+            else:
+                logger.info("ℹ️ No Captcha iframe found.")
+
+            # ------------------------------------------------------------------
+            # CAPTCHA HANDLING END
+            # ------------------------------------------------------------------
             
             # Click Confirm
             logger.info("✅ Clicking Confirm...")
@@ -294,19 +426,66 @@ def redeem_code(player_id, code):
             
             time.sleep(5) # Increased delay to wait for result
             
-            # Check Result
-            content = page.content().lower()
-            if 'success' in content or '成功' in content:
-                logger.info("🎉 REDEMPTION SUCCESSFUL!")
-                return {"success": True, "message": "Top-up Successful!"}
-            elif 'error' in content or '失败' in content:
-                logger.error("❌ Redemption failed on site.")
-                return {"success": False, "message": "Midasbuy Error: Invalid Code or System Busy."}
+            # Capture Screenshot for Verification
+            import os
+            if not os.path.exists("screenshots"):
+                os.makedirs("screenshots")
+            
+            timestamp = int(time.time())
+            screenshot_path = os.path.abspath(f"screenshots/result_{player_id}_{timestamp}.png")
+            try:
+                page.screenshot(path=screenshot_path)
+                logger.info(f"📸 Screenshot saved: {screenshot_path}")
+            except Exception as e:
+                logger.error(f"⚠️ Failed to take screenshot: {e}")
+                screenshot_path = None
+
+            # Check Result - STRICTER CHECK
+            # Use innerText to get only visible text, avoiding hidden "success" strings in scripts/metadata
+            visible_text = page.evaluate("document.body.innerText").lower()
+            
+            # Log the visible text for debugging
+            logger.info(f"📄 Page Text Content (First 500 chars): {visible_text[:500]}...")
+            
+            # Common Midasbuy success phrases
+            success_keywords = [
+                'redemption success', 
+                'purchase success', 
+                'transaction success', 
+                'successfully redeemed',
+                'redeemed successfully',
+                'success' # Still keep simple 'success' but combined with visible text it's safer than HTML source
+            ]
+            
+            # Specific error keywords
+            error_keywords = [
+                'redemption failed',
+                'transaction failed',
+                'invalid code',
+                'system busy',
+                'error',
+                'wrong player id'
+            ]
+            
+            is_success = False
+            # Check for success
+            for kw in success_keywords:
+                if kw in visible_text:
+                    is_success = True
+                    break
+            
+            # Double check for error (Error takes precedence if both appear, though unlikely)
+            for kw in error_keywords:
+                if kw in visible_text:
+                    is_success = False
+                    break
+
+            if is_success:
+                logger.info("🎉 REDEMPTION SUCCESSFUL (Verified Visible Text)")
+                return {"success": True, "message": "Top-up Successful!", "screenshot": screenshot_path}
             else:
-                logger.warning("⚠️ Result unclear.")
-                # Fallback: Assume success if no error popup? Or assume fail?
-                # Better to be safe.
-                return {"success": False, "message": "Unknown result from Midasbuy."}
+                logger.error("❌ Redemption failed or unverified.")
+                return {"success": False, "message": "Midasbuy: Redemption Failed or Unknown.", "screenshot": screenshot_path}
 
         except Exception as e:
             logger.error(f"Critical Error: {e}")
