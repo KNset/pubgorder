@@ -72,7 +72,11 @@ def start(message):
 def check_wallet(message):
     user = db.get_user(message.from_user.id, message.from_user.username)
     balance = user['balance']
-    bot.reply_to(message, f"👤 **သင့် Wallet အချက်အလက်**\n🆔 ID: `{message.from_user.id}`\n🔗 User: @{user['username'] if user['username'] else 'N/A'}\n💵 လက်ကျန်ငွေ: `{balance} MMK`", parse_mode="Markdown")
+    username_display = user['username'] if user['username'] else 'N/A'
+    # Escape underscore for Markdown
+    username_display = username_display.replace("_", "\\_")
+    
+    bot.reply_to(message, f"👤 **သင့် Wallet အချက်အလက်**\n🆔 ID: `{message.from_user.id}`\n🔗 User: @{username_display}\n💵 လက်ကျန်ငွေ: `{balance} MMK`", parse_mode="Markdown")
 
 @bot.message_handler(func=lambda m: m.text == "📜 History")
 def show_history(message):
@@ -763,6 +767,8 @@ def admin_user_detail_callback(call):
     markup.add(types.InlineKeyboardButton("🔙 Back to List", callback_data="admin_manage_users"))
     
     display_username = f"@{user['username']}" if user['username'] else "N/A"
+    # Escape underscore for Markdown
+    display_username = display_username.replace("_", "\\_")
     
     text = (f"👤 **User Details**\n\n"
             f"🆔 ID: `{uid}`\n"
