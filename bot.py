@@ -5,7 +5,6 @@ import os
 from datetime import datetime
 import logging
 import db  # Import database module
-import midasbuy_auto # Import automation module
 import json
 
 # --- [၁] Configuration ---
@@ -364,100 +363,53 @@ def execute_purchase(call):
     uid = call.from_user.id
     user = db.get_user(uid, call.from_user.username)
     price = uc_details[pk]['price']
-    
-    if user['balance'] >= price:
-        # Check if stock is available (peek)
-        cnt = db.get_stock_count(pk)
-        if cnt > 0:
-            # Ask for Player ID
-            msg = bot.send_message(call.message.chat.id, "🆔 **ကျေးဇူးပြု၍ PUBG Player ID (UID) ရိုက်ထည့်ပါ:**", parse_mode="Markdown")
-            bot.register_next_step_handler(msg, process_player_id, pk, price, uc_details[pk]['name'])
-            bot.delete_message(call.message.chat.id, call.message.message_id)
-        else:
-            bot.answer_callback_query(call.id, "⚠️ Stock ပြတ်နေပါသည်။", show_alert=True)
-    else:
-        bot.answer_callback_query(call.id, "❌ လက်ကျန်ငွေ မလုံလောက်ပါ။", show_alert=True)
-
-def process_player_id(message, pk, price, pkg_name):
-    if not message.text.isdigit():
-        return bot.reply_to(message, "❌ UID သည် ဂဏန်းများသာ ဖြစ်ရပါမည်။ ပြန်လည်ရွေးချယ်ပါ။")
-    
-    player_id = message.text
-    uid = message.from_user.id
-    
-    # Final Confirmation
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("✅ Confirm Top-up", callback_data=f"final_{pk}_{player_id}"),
-               types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_order"))
-    
-    bot.send_message(message.chat.id, 
-                     f"❓ **အတည်ပြုပါ**\n\n📦 Pack: **{pkg_name}**\n🆔 UID: `{player_id}`\n💵 Cost: `{price} MMK`", 
-                     reply_markup=markup, parse_mode="Markdown")
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith('final_'))
-def final_process(call):
-    _, pk, player_id = call.data.split('_')
-    uid = call.from_user.id
-    
-    uc_details = db.get_packages()
-    if pk not in uc_details:
-        return bot.answer_callback_query(call.id, "❌ Error", show_alert=True)
-        
-    price = uc_details[pk]['price']
-    user = db.get_user(uid, call.from_user.username)
+    package_name = uc_details[pk]['name']
     
     if user['balance'] < price:
         return bot.answer_callback_query(call.id, "❌ လက်ကျန်ငွေ မလုံလောက်ပါ။", show_alert=True)
-        
+
+    # Check stock
+    cnt = db.get_stock_count(pk)
+    if cnt <= 0:
+        return bot.answer_callback_query(call.id, "⚠️ Stock ပြတ်နေပါသည်။", show_alert=True)
+
+    # --- PROCESS TRANSACTION DIRECTLY ---
+    
     # 1. Get Code
     code = db.get_and_use_stock(pk)
     if not code:
         return bot.answer_callback_query(call.id, "⚠️ Stock ပြတ်သွားပါပြီ။", show_alert=True)
         
-    # 2. Deduct Balance (Temporary hold, refund if fail?)
-    # Ideally: Deduct -> Try Redeem -> If fail, Refund.
+    # 2. Deduct Balance
     db.update_balance(uid, -price)
     
-    bot.edit_message_text("⏳ **Processing Top-up... Please wait (1-2 mins)**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+    # 3. Log History
+    db.add_history(uid, package_name, code)
     
-    # 3. Call Automation
-    result = midasbuy_auto.redeem_code(player_id, code)
+    # 4. Send Code to User
+    success_msg = (
+        f"✅ **Thank You for Purchasing!**\n\n"
+        f"📦 Package: **{package_name}**\n"
+        f"🎟 Redeem Code: `{code}`\n\n"
+        f"💰 Price: `{price} MMK`\n"
+        f"ℹ️ Copy the code and redeem it yourself."
+    )
+    bot.send_message(uid, success_msg, parse_mode="Markdown")
     
-    if result['success']:
-        # Success
-        db.add_history(uid, uc_details[pk]['name'], f"Direct: {code}")
+    # 5. Notify Admins
+    admin_ids = set(db.get_all_admins())
+    admin_ids.add(ADMIN_ID)
+    for admin_id in admin_ids:
+        try:
+            bot.send_message(admin_id, f"🛒 **New Sale!**\n👤 User: @{call.from_user.username} ({uid})\n📦 Pack: {package_name}\n🎟 Code: `{code}`")
+        except: pass
         
-        bot.send_message(uid, f"✅ **Top-up Successful!**\n\n📦 {uc_details[pk]['name']}\n🆔 UID: `{player_id}`\n🎉 Enjoy!", parse_mode="Markdown")
-        
-        # Notify All Admins
-        admin_ids = set(db.get_all_admins())
-        admin_ids.add(ADMIN_ID)
-        for admin_id in admin_ids:
-            try:
-                bot.send_message(admin_id, f"🛒 **Auto-Topup Success**\n👤 User: @{call.from_user.username}\n🆔 UID: `{player_id}`\n📦 Pack: {uc_details[pk]['name']}\n🎟 Code Used: `{code}`")
-                # Send Screenshot if available
-                if result.get('screenshot') and os.path.exists(result['screenshot']):
-                    with open(result['screenshot'], 'rb') as photo:
-                        bot.send_photo(admin_id, photo, caption="📸 Proof of Success")
-            except: pass
-    else:
-        # Failed - Refund and Notify Admin
-        db.update_balance(uid, price) # Refund
-        # Ideally we should re-add stock, but for now let's just log it to admin to handle the code manually
-        
-        bot.send_message(uid, f"❌ **Top-up Failed**\n{result['message']}\n💰 ပိုက်ဆံပြန်အမ်းလိုက်ပါပြီ။", parse_mode="Markdown")
-        
-        # Notify All Admins
-        admin_ids = set(db.get_all_admins())
-        admin_ids.add(ADMIN_ID)
-        for admin_id in admin_ids:
-            try:
-                bot.send_message(admin_id, f"⚠️ **Auto-Topup FAILED**\n👤 User: @{call.from_user.username}\n🆔 UID: `{player_id}`\n🎟 Code: `{code}`\n❌ Reason: {result['message']}\nℹ️ Code was consumed from DB but User refunded.")
-                # Send Screenshot if available
-                if result.get('screenshot') and os.path.exists(result['screenshot']):
-                    with open(result['screenshot'], 'rb') as photo:
-                        bot.send_photo(admin_id, photo, caption="📸 Error Screenshot")
-            except: pass
+    # Edit the original message to show success
+    bot.edit_message_text(f"✅ **Purchased Successfully!**\nCheck your Private Messages for the code.", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+
+# Remove obsolete midasbuy functions
+# process_player_id and final_process are no longer needed
+
 
 # --- [၇] Admin Controls (Add Stock & Approval) ---
 @bot.message_handler(commands=['add'])
