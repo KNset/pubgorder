@@ -194,7 +194,36 @@ def redeem_code(player_id, code):
                 
             # Enter Code
             logger.info(f"⌨️ Entering redeem code: {code}")
-            page.click('.Input_input__s4ezt input[type="text"]')
+            
+            # Robust Input Finding (Prioritize selectors from midasbuy.js)
+            input_found = False
+            selectors = [
+                '.Input_input__s4ezt input[type="text"]', # midasbuy.js selector
+                'input[placeholder*="Redeem Code"]', 
+                'input[placeholder*="redeem code"]',
+                '[class*="RedeemStepBox"] input'
+            ]
+            
+            for sel in selectors:
+                try:
+                    if page.locator(sel).count() > 0:
+                        page.click(sel, timeout=1000)
+                        input_found = True
+                        break
+                except: continue
+                
+            if not input_found:
+                # Last resort JS focus
+                page.evaluate("""() => {
+                    const inputs = document.querySelectorAll('input');
+                    for(const inp of inputs) {
+                        if(inp.placeholder.toLowerCase().includes('redeem')) {
+                            inp.focus();
+                            inp.click();
+                        }
+                    }
+                }""")
+            
             time.sleep(0.3)
             page.keyboard.press("Control+A")
             page.keyboard.press("Delete")
@@ -203,12 +232,47 @@ def redeem_code(player_id, code):
             
             # Click OK (Redeem)
             logger.info("🔘 Clicking Redeem OK...")
+            
+            # Robust Button Clicking (Prioritize selectors from midasbuy.js)
             page.evaluate("""() => {
-                const button = document.querySelector('.RedeemStepBox_btn_wrap__wEKY9 .Button_btn__P0ibl');
-                if (button) {
-                    button.classList.remove('Button_disable__fVSbn');
-                    button.style.pointerEvents = 'auto';
-                    button.click();
+                // Helper to click
+                function clickBtn(btn) {
+                    if(!btn) return false;
+                    try {
+                        // Logic from midasbuy.js to enable button
+                        if (btn.classList.contains('Button_disable__fVSbn')) {
+                            btn.classList.remove('Button_disable__fVSbn');
+                            btn.style.pointerEvents = 'auto';
+                        }
+                        btn.click();
+                        return true;
+                    } catch(e) { return false; }
+                }
+
+                // 1. Try exact selector from midasbuy.js
+                const jsButton = document.querySelector('.RedeemStepBox_btn_wrap__wEKY9 .Button_btn__P0ibl');
+                if (clickBtn(jsButton)) return;
+
+                // 2. Try finding OK button inside RedeemStepBox (Most specific)
+                const container = document.querySelector('[class*="RedeemStepBox"]');
+                if (container) {
+                    const okBtns = Array.from(container.querySelectorAll('button, [class*="Button_btn"]'));
+                    for (const btn of okBtns) {
+                        if (btn.textContent.trim() === 'OK') {
+                            if(clickBtn(btn)) return;
+                        }
+                    }
+                }
+                
+                // 3. Try generic OK button that appears after the input
+                const allOkBtns = Array.from(document.querySelectorAll('button, [class*="Button_btn"]'));
+                // Reverse to find the one further down (Redeem is usually below Player ID)
+                for (const btn of allOkBtns.reverse()) {
+                    if (btn.textContent.trim() === 'OK' && btn.offsetParent !== null) { // Visible
+                         // Avoid the Player ID OK button if possible (usually higher up)
+                         clickBtn(btn);
+                         return;
+                    }
                 }
             }""")
             time.sleep(1.5)
