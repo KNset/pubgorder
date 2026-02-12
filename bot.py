@@ -161,9 +161,18 @@ def handle_ss(message, amount):
             f"💵 Amount: {amount} MMK"
         )
         
-        bot.send_photo(ADMIN_ID, message.photo[-1].file_id, 
-                       caption=caption, 
-                       reply_markup=markup) # Removed parse_mode="Markdown"
+        # Notify All Admins
+        admin_ids = set(db.get_all_admins())
+        admin_ids.add(ADMIN_ID)
+        
+        for admin_id in admin_ids:
+            try:
+                bot.send_photo(admin_id, message.photo[-1].file_id, 
+                               caption=caption, 
+                               reply_markup=markup)
+            except Exception as e:
+                logging.error(f"Failed to send to admin {admin_id}: {e}")
+
         bot.send_message(message.chat.id, "✅ Admin အတည်ပြုချက်အတွက် ပို့လိုက်ပါပြီ။")
     except Exception as e:
         logging.error(f"Error sending photo to admin: {e}")
@@ -293,7 +302,16 @@ def process_manual_order(message, pkg):
                  f"📝 Details: `{details}`\n"
                  f"💵 Paid: {pkg['price']} MMK")
                  
-    bot.send_message(ADMIN_ID, admin_msg, reply_markup=markup, parse_mode="Markdown")
+    # Notify All Admins
+    admin_ids = set(db.get_all_admins())
+    admin_ids.add(ADMIN_ID)
+    
+    for admin_id in admin_ids:
+        try:
+            bot.send_message(admin_id, admin_msg, reply_markup=markup, parse_mode="Markdown")
+        except Exception as e:
+            logging.error(f"Failed to send to admin {admin_id}: {e}")
+
     bot.send_message(uid, "✅ **Order Received!**\nAdmin will process it shortly.", parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith('manual_done_'))
@@ -410,14 +428,28 @@ def final_process(call):
         db.add_history(uid, uc_details[pk]['name'], f"Direct: {code}")
         
         bot.send_message(uid, f"✅ **Top-up Successful!**\n\n📦 {uc_details[pk]['name']}\n🆔 UID: `{player_id}`\n🎉 Enjoy!", parse_mode="Markdown")
-        bot.send_message(ADMIN_ID, f"🛒 **Auto-Topup Success**\n👤 User: @{call.from_user.username}\n🆔 UID: `{player_id}`\n📦 Pack: {uc_details[pk]['name']}\n🎟 Code Used: `{code}`")
+        
+        # Notify All Admins
+        admin_ids = set(db.get_all_admins())
+        admin_ids.add(ADMIN_ID)
+        for admin_id in admin_ids:
+            try:
+                bot.send_message(admin_id, f"🛒 **Auto-Topup Success**\n👤 User: @{call.from_user.username}\n🆔 UID: `{player_id}`\n📦 Pack: {uc_details[pk]['name']}\n🎟 Code Used: `{code}`")
+            except: pass
     else:
         # Failed - Refund and Notify Admin
         db.update_balance(uid, price) # Refund
         # Ideally we should re-add stock, but for now let's just log it to admin to handle the code manually
         
         bot.send_message(uid, f"❌ **Top-up Failed**\n{result['message']}\n💰 ပိုက်ဆံပြန်အမ်းလိုက်ပါပြီ။", parse_mode="Markdown")
-        bot.send_message(ADMIN_ID, f"⚠️ **Auto-Topup FAILED**\n👤 User: @{call.from_user.username}\n🆔 UID: `{player_id}`\n🎟 Code: `{code}`\n❌ Reason: {result['message']}\nℹ️ Code was consumed from DB but User refunded.")
+        
+        # Notify All Admins
+        admin_ids = set(db.get_all_admins())
+        admin_ids.add(ADMIN_ID)
+        for admin_id in admin_ids:
+            try:
+                bot.send_message(admin_id, f"⚠️ **Auto-Topup FAILED**\n👤 User: @{call.from_user.username}\n🆔 UID: `{player_id}`\n🎟 Code: `{code}`\n❌ Reason: {result['message']}\nℹ️ Code was consumed from DB but User refunded.")
+            except: pass
 
 # --- [၇] Admin Controls (Add Stock & Approval) ---
 @bot.message_handler(commands=['add'])
