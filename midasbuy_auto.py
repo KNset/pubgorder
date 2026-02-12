@@ -187,10 +187,13 @@ def redeem_code(player_id, code):
                 return {"success": False, "message": "Failed to load Midasbuy page."}
 
             handle_promotional_popup(page)
+            time.sleep(2) # Delay after popup check
             
             # Change Player ID
             if not clear_and_enter_player_id(page, player_id):
                 return {"success": False, "message": "Failed to verify Player ID. Please check if ID is correct."}
+            
+            time.sleep(2) # Delay after Player ID change
                 
             # Enter Code
             logger.info(f"⌨️ Entering redeem code: {code}")
@@ -224,11 +227,11 @@ def redeem_code(player_id, code):
                     }
                 }""")
             
-            time.sleep(0.3)
+            time.sleep(1)
             page.keyboard.press("Control+A")
             page.keyboard.press("Delete")
-            page.keyboard.type(code, delay=40)
-            time.sleep(0.6)
+            page.keyboard.type(code, delay=100) # Slower typing
+            time.sleep(1.5) # Delay after typing code
             
             # Click OK (Redeem)
             logger.info("🔘 Clicking Redeem OK...")
@@ -275,7 +278,7 @@ def redeem_code(player_id, code):
                     }
                 }
             }""")
-            time.sleep(1.5)
+            time.sleep(3) # Increased delay after clicking Redeem OK
             
             # Click Confirm
             logger.info("✅ Clicking Confirm...")
@@ -289,7 +292,7 @@ def redeem_code(player_id, code):
                 }
             }""")
             
-            time.sleep(3)
+            time.sleep(5) # Increased delay to wait for result
             
             # Check Result
             content = page.content().lower()
