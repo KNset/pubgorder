@@ -62,17 +62,17 @@ def list_admins(message):
 @bot.message_handler(commands=['start'])
 def start(message):
     uid = message.from_user.id
-    # Ensure user exists in DB
-    user = db.get_user(uid)
+    # Ensure user exists in DB and update username
+    user = db.get_user(uid, message.from_user.username)
     balance = user['balance']
     bot.send_message(message.chat.id, f"🎮 **JOE GAME SHOP မှ ကြိုဆိုပါတယ်!**\n💵 သင့်လက်ကျန်ငွေ: `{balance} MMK`", reply_markup=main_menu(), parse_mode="Markdown")
 
 # --- [၄] Wallet & History Check ---
 @bot.message_handler(func=lambda m: m.text == "👤 Wallet")
 def check_wallet(message):
-    user = db.get_user(message.from_user.id)
+    user = db.get_user(message.from_user.id, message.from_user.username)
     balance = user['balance']
-    bot.reply_to(message, f"👤 **သင့် Wallet အချက်အလက်**\n🆔 ID: `{message.from_user.id}`\n💵 လက်ကျန်ငွေ: `{balance} MMK`", parse_mode="Markdown")
+    bot.reply_to(message, f"👤 **သင့် Wallet အချက်အလက်**\n🆔 ID: `{message.from_user.id}`\n🔗 User: @{user['username'] if user['username'] else 'N/A'}\n💵 လက်ကျန်ငွေ: `{balance} MMK`", parse_mode="Markdown")
 
 @bot.message_handler(func=lambda m: m.text == "📜 History")
 def show_history(message):
@@ -228,7 +228,7 @@ def buy_game_package(call):
         return bot.answer_callback_query(call.id, "❌ Package Invalid", show_alert=True)
         
     uid = call.from_user.id
-    user = db.get_user(uid)
+    user = db.get_user(uid, call.from_user.username)
     
     # Confirm
     markup = types.InlineKeyboardMarkup()
@@ -247,7 +247,7 @@ def confirm_game_package(call):
     pid = int(call.data.split('_')[2])
     pkg = db.get_game_package_by_id(pid)
     uid = call.from_user.id
-    user = db.get_user(uid)
+    user = db.get_user(uid, call.from_user.username)
     
     if user['balance'] < pkg['price']:
         return bot.answer_callback_query(call.id, "❌ Insufficient Balance", show_alert=True)
@@ -340,7 +340,7 @@ def execute_purchase(call):
         return bot.answer_callback_query(call.id, "❌ Package မရှိတော့ပါ", show_alert=True)
     
     uid = call.from_user.id
-    user = db.get_user(uid)
+    user = db.get_user(uid, call.from_user.username)
     price = uc_details[pk]['price']
     
     if user['balance'] >= price:
@@ -382,7 +382,7 @@ def final_process(call):
         return bot.answer_callback_query(call.id, "❌ Error", show_alert=True)
         
     price = uc_details[pk]['price']
-    user = db.get_user(uid)
+    user = db.get_user(uid, call.from_user.username)
     
     if user['balance'] < price:
         return bot.answer_callback_query(call.id, "❌ လက်ကျန်ငွေ မလုံလောက်ပါ။", show_alert=True)
@@ -628,6 +628,7 @@ def admin_dashboard(message):
         types.InlineKeyboardButton("🎮 Manage Games", callback_data="admin_manage_games"),
         types.InlineKeyboardButton("➕ Add New Package", callback_data="admin_add_package"),
         types.InlineKeyboardButton("💳 Manage Payments", callback_data="admin_manage_payments"),
+        types.InlineKeyboardButton("👥 Manage Users", callback_data="admin_manage_users"),
         types.InlineKeyboardButton("❌ Close", callback_data="admin_close")
     )
     bot.send_message(message.chat.id, "🔧 **Admin Dashboard**", reply_markup=markup, parse_mode="Markdown")
@@ -667,9 +668,144 @@ def admin_back_main(call):
         types.InlineKeyboardButton("🎮 Manage Games", callback_data="admin_manage_games"),
         types.InlineKeyboardButton("➕ Add New Package", callback_data="admin_add_package"),
         types.InlineKeyboardButton("💳 Manage Payments", callback_data="admin_manage_payments"),
+        types.InlineKeyboardButton("👥 Manage Users", callback_data="admin_manage_users"),
         types.InlineKeyboardButton("❌ Close", callback_data="admin_close")
     )
     bot.edit_message_text("🔧 **Admin Dashboard**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda c: c.data == "admin_manage_users")
+def admin_manage_users(call):
+    show_user_list(call.message, 0)
+
+def show_user_list(message, page):
+    limit = 10
+    offset = page * limit
+    users = db.get_all_users(limit, offset)
+    total_users = db.get_total_users_count()
+    
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    
+    for u in users:
+        # Try to resolve username if missing
+        username = u['username']
+        if not username:
+            try:
+                chat = bot.get_chat(u['user_id'])
+                if chat.username:
+                    username = chat.username
+                    # Update DB for future speed
+                    db.update_user_username(u['user_id'], username)
+            except Exception as e:
+                logging.warning(f"Could not fetch username for {u['user_id']}: {e}")
+        
+        display_name = f"@{username}" if username else f"{u['user_id']}"
+        markup.add(types.InlineKeyboardButton(f"👤 {display_name} | 💰 {u['balance']}", callback_data=f"adm_u_dtl_{u['user_id']}"))
+        
+    # Pagination
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(types.InlineKeyboardButton("⬅️ Prev", callback_data=f"adm_u_pg_{page-1}"))
+    if offset + limit < total_users:
+        nav_buttons.append(types.InlineKeyboardButton("Next ➡️", callback_data=f"adm_u_pg_{page+1}"))
+    if nav_buttons:
+        markup.add(*nav_buttons)
+        
+    markup.add(types.InlineKeyboardButton("➕ Add User", callback_data="admin_add_user_manual"))
+    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="admin_back_main"))
+    
+    text = f"👥 **User List** (Total: {total_users})\nSelect a user to manage:"
+    
+    # Edit if callback, Send if message
+    if isinstance(message, types.Message):
+        bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="Markdown")
+    else:
+        # It's a message object from callback
+        bot.edit_message_text(text, message.chat.id, message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith('adm_u_pg_'))
+def admin_user_pagination(call):
+    page = int(call.data.split('_')[3])
+    show_user_list(call.message, page)
+
+@bot.callback_query_handler(func=lambda c: c.data == "admin_add_user_manual")
+def admin_add_user_start(call):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    markup.add("❌ Cancel")
+    msg = bot.send_message(call.message.chat.id, "➕ **Enter User ID to Add:**", reply_markup=markup)
+    bot.register_next_step_handler(msg, admin_add_user_save)
+
+def admin_add_user_save(message):
+    if message.text == "❌ Cancel":
+        return bot.send_message(message.chat.id, "❌ Cancelled.", reply_markup=types.ReplyKeyboardRemove())
+    
+    if not message.text.isdigit():
+        return bot.send_message(message.chat.id, "❌ Invalid ID.", reply_markup=types.ReplyKeyboardRemove())
+        
+    uid = int(message.text)
+    if db.add_user(uid):
+        bot.send_message(message.chat.id, f"✅ **User {uid} Added!**", reply_markup=types.ReplyKeyboardRemove())
+    else:
+        bot.send_message(message.chat.id, f"⚠️ **User {uid} already exists.**", reply_markup=types.ReplyKeyboardRemove())
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith('adm_u_dtl_'))
+def admin_user_detail_callback(call):
+    uid = int(call.data.split('_')[3])
+    user = db.get_user(uid)
+    
+    if not user:
+        return bot.answer_callback_query(call.id, "❌ User not found", show_alert=True)
+        
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("➕ Add Balance", callback_data=f"adm_usr_add_{uid}"),
+        types.InlineKeyboardButton("➖ Deduct Balance", callback_data=f"adm_usr_sub_{uid}")
+    )
+    markup.add(types.InlineKeyboardButton("🔙 Back to List", callback_data="admin_manage_users"))
+    
+    display_username = f"@{user['username']}" if user['username'] else "N/A"
+    
+    text = (f"👤 **User Details**\n\n"
+            f"🆔 ID: `{uid}`\n"
+            f"🔗 Username: {display_username}\n"
+            f"💰 Balance: `{user['balance']} MMK`\n"
+            f"📅 Joined: {user['joined_at']}")
+            
+    bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+# Reuse existing balance change logic...
+@bot.callback_query_handler(func=lambda c: c.data.startswith('adm_usr_add_'))
+def admin_user_add_balance(call):
+    uid = int(call.data.split('_')[3])
+    msg = bot.send_message(call.message.chat.id, f"➕ **Enter Amount to ADD for {uid}:**")
+    bot.register_next_step_handler(msg, process_admin_balance_change, uid, 1)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith('adm_usr_sub_'))
+def admin_user_sub_balance(call):
+    uid = int(call.data.split('_')[3])
+    msg = bot.send_message(call.message.chat.id, f"➖ **Enter Amount to DEDUCT for {uid}:**")
+    bot.register_next_step_handler(msg, process_admin_balance_change, uid, -1)
+
+
+def process_admin_balance_change(message, uid, multiplier):
+    if not message.text.isdigit():
+        return bot.send_message(message.chat.id, "❌ Invalid Amount.")
+        
+    amount = int(message.text) * multiplier
+    db.update_balance(uid, amount)
+    
+    user = db.get_user(uid)
+    action = "Added to" if amount > 0 else "Deducted from"
+    
+    bot.send_message(message.chat.id, f"✅ **Success!**\n💰 {abs(amount)} MMK {action} User {uid}.\nNew Balance: {user['balance']} MMK")
+    
+    # Notify User
+    try:
+        if amount > 0:
+            bot.send_message(uid, f"🎉 **Admin added {amount} MMK to your wallet!**\n💰 New Balance: {user['balance']} MMK")
+        else:
+            bot.send_message(uid, f"⚠️ **Admin deducted {abs(amount)} MMK from your wallet.**\n💰 New Balance: {user['balance']} MMK")
+    except:
+        pass # User might have blocked bot
 
 @bot.callback_query_handler(func=lambda c: c.data == "admin_manage_games")
 def admin_manage_games(call):
