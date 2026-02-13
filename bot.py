@@ -324,18 +324,50 @@ def process_manual_order(message, pkg):
 @bot.callback_query_handler(func=lambda c: c.data.startswith('manual_done_'))
 def manual_order_done(call):
     uid = int(call.data.split('_')[2])
-    bot.send_message(uid, "🎉 **Your Order is Completed!**\nThank you for buying.")
-    bot.edit_message_caption(call.message.caption + "\n\n✅ **COMPLETED**", call.message.chat.id, call.message.message_id)
+    
+    # Notify User
+    try:
+        bot.send_message(uid, "🎉 **Order Accepted & Completed!**\nThank you for purchasing.", parse_mode="Markdown")
+    except:
+        pass # User might have blocked bot
+
+    # Update Admin Message (Remove details, show success)
+    admin_name = call.from_user.first_name
+    success_text = f"✅ **Order Completed**\n👤 Processed by: {admin_name}"
+    
+    try:
+        bot.edit_message_text(success_text, call.message.chat.id, call.message.message_id, reply_markup=None, parse_mode="Markdown")
+    except Exception as e:
+        # Fallback if it was a caption (unlikely for manual order but safe to have)
+        try:
+            bot.edit_message_caption(success_text, call.message.chat.id, call.message.message_id, reply_markup=None, parse_mode="Markdown")
+        except:
+            pass
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith('manual_refund_'))
 def manual_order_refund(call):
-    _, _, uid, price = call.data.split('_')
-    uid = int(uid)
-    price = int(price)
-    
-    db.update_balance(uid, price)
-    bot.send_message(uid, f"❌ **Order Cancelled & Refunded**\nAmount: {price} MMK")
-    bot.edit_message_caption(call.message.caption + "\n\n❌ **REFUNDED**", call.message.chat.id, call.message.message_id)
+    try:
+        _, _, uid, price = call.data.split('_')
+        uid = int(uid)
+        price = int(price)
+        
+        # Process Refund
+        db.update_balance(uid, price)
+        
+        # Notify User
+        bot.send_message(uid, f"❌ **Order Cancelled & Refunded**\n💰 Amount: {price} MMK returned to wallet.")
+        
+        # Update Admin Message
+        admin_name = call.from_user.first_name
+        refund_text = f"❌ **Order Refunded**\n👤 Processed by: {admin_name}"
+        
+        bot.edit_message_text(refund_text, call.message.chat.id, call.message.message_id, reply_markup=None, parse_mode="Markdown")
+    except Exception as e:
+        print(f"Refund Error: {e}")
+        try:
+            bot.edit_message_caption(refund_text, call.message.chat.id, call.message.message_id, reply_markup=None, parse_mode="Markdown")
+        except:
+            pass
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith('pre_'))
 def pre_purchase(call):
