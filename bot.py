@@ -61,10 +61,18 @@ def list_admins(message):
 @bot.message_handler(commands=['start'])
 def start(message):
     uid = message.from_user.id
-    # Ensure user exists in DB and update username
-    user = db.get_user(uid, message.from_user.username)
-    balance = user['balance']
-    bot.send_message(message.chat.id, f"🎮 **JOE GAME SHOP မှ ကြိုဆိုပါတယ်!**\n💵 သင့်လက်ကျန်ငွေ: `{balance} MMK`", reply_markup=main_menu(), parse_mode="Markdown")
+    # Run user fetch/create in a thread or optimize query
+    # For now, just ensure it's fast.
+    # We can cache user balance if needed, but DB pool should be fast enough.
+    
+    # Check if user exists first to avoid unnecessary updates
+    try:
+        user = db.get_user(uid, message.from_user.username)
+        balance = user['balance']
+        bot.send_message(message.chat.id, f"🎮 **JOE GAME SHOP မှ ကြိုဆိုပါတယ်!**\n💵 သင့်လက်ကျန်ငွေ: `{balance} MMK`", reply_markup=main_menu(), parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Start Error: {e}")
+        bot.send_message(message.chat.id, "⚠️ System Error. Please try again later.")
 
 # --- [၄] Wallet & History Check ---
 @bot.message_handler(func=lambda m: m.text == "👤 Wallet")

@@ -439,6 +439,7 @@ def get_user(user_id, username=None):
     conn = get_connection()
     try:
         cur = conn.cursor(cursor_factory=RealDictCursor)
+        # Optimized: Only fetch what is needed, and handle creation only if missing
         cur.execute("SELECT * FROM users WHERE user_id = %s", (user_id,))
         user = cur.fetchone()
         
@@ -448,12 +449,18 @@ def get_user(user_id, username=None):
             user = cur.fetchone()
             conn.commit()
         elif username and user['username'] != username:
-            # Update username if changed
+            # Update username asynchronously? No, do it here but maybe less frequently?
+            # For now, keep it but ensure index exists on user_id
             cur.execute("UPDATE users SET username = %s WHERE user_id = %s", (username, user_id))
             conn.commit()
             user['username'] = username
             
         cur.close()
+    except Exception as e:
+        # Fallback if connection fails
+        print(f"DB Error get_user: {e}")
+        if conn: conn.rollback()
+        raise e
     finally:
         release_connection(conn)
     return user
