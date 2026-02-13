@@ -1,50 +1,14 @@
-import psycopg2
-from psycopg2.extras import RealDictCursor
-from psycopg2 import pool
+import sqlite3
 import os
 from datetime import datetime
 
 # Database Configuration
-# You can set these in your environment variables or change them here directly
-DB_NAME = os.getenv("DB_NAME", "uc_shop_db")
-DB_USER = os.getenv("DB_USER", "postgres")
-DB_PASS = os.getenv("DB_PASS", "1001")
-DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_PORT = os.getenv("DB_PORT", "5432")
-
-# Connection Pool
-try:
-    db_pool = psycopg2.pool.SimpleConnectionPool(
-        1,  # minconn
-        20, # maxconn
-        dbname=DB_NAME,
-        user=DB_USER,
-        password=DB_PASS,
-        host=DB_HOST,
-        port=DB_PORT
-    )
-    print("Database connection pool created.")
-except Exception as e:
-    print(f"Error creating connection pool: {e}")
-    db_pool = None
+DB_NAME = "uc_shop.db"
 
 def get_connection():
-    if db_pool:
-        return db_pool.getconn()
-    else:
-        return psycopg2.connect(
-            dbname=DB_NAME,
-            user=DB_USER,
-            password=DB_PASS,
-            host=DB_HOST,
-            port=DB_PORT
-        )
-
-def release_connection(conn):
-    if db_pool:
-        db_pool.putconn(conn)
-    else:
-        conn.close()
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 def init_db():
     conn = get_connection()
@@ -53,36 +17,29 @@ def init_db():
     # Users Table (Stores Wallet Balance)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            user_id BIGINT PRIMARY KEY,
+            user_id INTEGER PRIMARY KEY,
             username TEXT,
             balance INTEGER DEFAULT 0,
             joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     """)
     
-    # Migration: Add username column if not exists (for existing databases)
-    try:
-        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT;")
-        conn.commit()
-    except Exception as e:
-        print(f"Migration warning: {e}")
-        conn.rollback()
-
     # History Table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS history (
-            id SERIAL PRIMARY KEY,
-            user_id BIGINT REFERENCES users(user_id),
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
             package_name TEXT,
             code TEXT,
-            purchase_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            purchase_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
         );
     """)
     
     # Stock Table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS stocks (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             package_id TEXT,
             code TEXT UNIQUE,
             added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -92,7 +49,7 @@ def init_db():
     # Packages Table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS packages (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             identifier TEXT UNIQUE NOT NULL,
             name TEXT NOT NULL,
             price INTEGER NOT NULL
@@ -110,18 +67,18 @@ def init_db():
             ("3850", "3850 UC", 178700),
             ("8100", "8100 UC", 357900)
         ]
-        cur.executemany("INSERT INTO packages (identifier, name, price) VALUES (%s, %s, %s)", initial_packages)
+        cur.executemany("INSERT INTO packages (identifier, name, price) VALUES (?, ?, ?)", initial_packages)
         print("Seeded initial packages.")
 
     # Payment Methods Table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS payment_methods (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             account_number TEXT,
             account_name TEXT,
             qr_photo_id TEXT,
-            is_active BOOLEAN DEFAULT TRUE
+            is_active BOOLEAN DEFAULT 1
         );
     """)
 
@@ -129,54 +86,44 @@ def init_db():
     cur.execute("""
         CREATE TABLE IF NOT EXISTS api_config (
             service_name TEXT PRIMARY KEY,
-            config JSONB
+            config JSON
         );
     """)
 
     # Games Table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS games (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
-            is_active BOOLEAN DEFAULT TRUE
+            is_active BOOLEAN DEFAULT 1
         );
     """)
 
     # Game Packages Table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS game_packages (
-            id SERIAL PRIMARY KEY,
-            game_id INTEGER REFERENCES games(id) ON DELETE CASCADE,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id INTEGER,
             name TEXT NOT NULL,
-            price INTEGER NOT NULL
+            price INTEGER NOT NULL,
+            FOREIGN KEY(game_id) REFERENCES games(id) ON DELETE CASCADE
         );
     """)
 
     # Check if PUBG exists, if not create it
     cur.execute("SELECT id FROM games WHERE name = 'PUBG UC'")
     if not cur.fetchone():
-        cur.execute("INSERT INTO games (name) VALUES ('PUBG UC') RETURNING id")
-        pubg_id = cur.fetchone()[0]
-        # Migrate existing 'packages' to 'game_packages' if needed?
-        # For now, let's keep 'packages' table for PUBG specifically to not break existing code immediately,
-        # OR we can migrate everything.
-        # Let's keep 'packages' for PUBG for backward compatibility for now, 
-        # but for NEW games we use 'game_packages'.
+        cur.execute("INSERT INTO games (name) VALUES ('PUBG UC')")
+        
     # Admins Table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS admins (
-            user_id BIGINT PRIMARY KEY,
+            user_id INTEGER PRIMARY KEY,
             added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     """)
 
-    # Seed initial admin if empty (from config)
-    # This is a bit tricky because we don't know the ID here unless passed.
-    # But bot.py handles the main admin ID.
-    # Let's add a function to ensure main admin exists.
-
     conn.commit()
-    cur.close()
     conn.close()
     print("Database initialized successfully.")
 
@@ -186,11 +133,10 @@ def is_admin(user_id):
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT 1 FROM admins WHERE user_id = %s", (user_id,))
+        cur.execute("SELECT 1 FROM admins WHERE user_id = ?", (user_id,))
         exists = cur.fetchone() is not None
-        cur.close()
     finally:
-        release_connection(conn)
+        conn.close()
     return exists
 
 def add_admin(user_id):
@@ -198,25 +144,23 @@ def add_admin(user_id):
     try:
         cur = conn.cursor()
         try:
-            cur.execute("INSERT INTO admins (user_id) VALUES (%s) ON CONFLICT DO NOTHING", (user_id,))
+            cur.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (user_id,))
             conn.commit()
             success = True
         except:
             success = False
-        cur.close()
     finally:
-        release_connection(conn)
+        conn.close()
     return success
 
 def remove_admin(user_id):
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute("DELETE FROM admins WHERE user_id = %s", (user_id,))
+        cur.execute("DELETE FROM admins WHERE user_id = ?", (user_id,))
         conn.commit()
-        cur.close()
     finally:
-        release_connection(conn)
+        conn.close()
 
 def get_all_admins():
     conn = get_connection()
@@ -224,9 +168,8 @@ def get_all_admins():
         cur = conn.cursor()
         cur.execute("SELECT user_id FROM admins")
         admins = [row[0] for row in cur.fetchall()]
-        cur.close()
     finally:
-        release_connection(conn)
+        conn.close()
     return admins
 
 # --- Game Functions ---
@@ -234,12 +177,11 @@ def get_all_admins():
 def get_games():
     conn = get_connection()
     try:
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT * FROM games WHERE is_active = TRUE ORDER BY id ASC")
-        games = cur.fetchall()
-        cur.close()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM games WHERE is_active = 1 ORDER BY id ASC")
+        games = [dict(row) for row in cur.fetchall()]
     finally:
-        release_connection(conn)
+        conn.close()
     return games
 
 def add_game(name):
@@ -247,76 +189,68 @@ def add_game(name):
     try:
         cur = conn.cursor()
         try:
-            cur.execute("INSERT INTO games (name) VALUES (%s) RETURNING id", (name,))
-            game_id = cur.fetchone()[0]
+            cur.execute("INSERT INTO games (name) VALUES (?)", (name,))
             conn.commit()
             success = True
-        except psycopg2.IntegrityError:
-            conn.rollback()
-            game_id = None
+        except sqlite3.IntegrityError:
             success = False
-        cur.close()
     finally:
-        release_connection(conn)
-    return game_id
+        conn.close()
+    return success
 
 def delete_game(game_id):
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute("DELETE FROM games WHERE id = %s", (game_id,))
+        cur.execute("DELETE FROM games WHERE id = ?", (game_id,))
         conn.commit()
-        cur.close()
     finally:
-        release_connection(conn)
+        conn.close()
 
 # --- Game Package Functions ---
 
 def get_game_packages(game_id):
     conn = get_connection()
     try:
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT * FROM game_packages WHERE game_id = %s ORDER BY price ASC", (game_id,))
-        packages = cur.fetchall()
-        cur.close()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM game_packages WHERE game_id = ? ORDER BY price ASC", (game_id,))
+        packages = [dict(row) for row in cur.fetchall()]
     finally:
-        release_connection(conn)
+        conn.close()
     return packages
 
 def add_game_package(game_id, name, price):
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute("INSERT INTO game_packages (game_id, name, price) VALUES (%s, %s, %s)", (game_id, name, price))
+        cur.execute("INSERT INTO game_packages (game_id, name, price) VALUES (?, ?, ?)", (game_id, name, price))
         conn.commit()
-        cur.close()
     finally:
-        release_connection(conn)
+        conn.close()
 
 def delete_game_package(package_id):
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute("DELETE FROM game_packages WHERE id = %s", (package_id,))
+        cur.execute("DELETE FROM game_packages WHERE id = ?", (package_id,))
         conn.commit()
-        cur.close()
     finally:
-        release_connection(conn)
+        conn.close()
 
 def get_game_package_by_id(package_id):
     conn = get_connection()
     try:
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute("""
             SELECT gp.*, g.name as game_name 
             FROM game_packages gp 
             JOIN games g ON gp.game_id = g.id 
-            WHERE gp.id = %s
+            WHERE gp.id = ?
         """, (package_id,))
-        pkg = cur.fetchone()
-        cur.close()
+        row = cur.fetchone()
+        pkg = dict(row) if row else None
     finally:
-        release_connection(conn)
+        conn.close()
     return pkg
 
 # --- API Config Functions ---
@@ -324,13 +258,13 @@ def get_game_package_by_id(package_id):
 def get_api_config(service_name):
     conn = get_connection()
     try:
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT config FROM api_config WHERE service_name = %s", (service_name,))
+        cur = conn.cursor()
+        cur.execute("SELECT config FROM api_config WHERE service_name = ?", (service_name,))
         row = cur.fetchone()
-        cur.close()
+        import json
+        return json.loads(row[0]) if row else None
     finally:
-        release_connection(conn)
-    return row['config'] if row else None
+        conn.close()
 
 def set_api_config(service_name, config_data):
     conn = get_connection()
@@ -338,30 +272,27 @@ def set_api_config(service_name, config_data):
         cur = conn.cursor()
         import json
         cur.execute("""
-            INSERT INTO api_config (service_name, config) 
-            VALUES (%s, %s) 
-            ON CONFLICT (service_name) 
-            DO UPDATE SET config = EXCLUDED.config
+            INSERT OR REPLACE INTO api_config (service_name, config) 
+            VALUES (?, ?) 
         """, (service_name, json.dumps(config_data)))
         conn.commit()
-        cur.close()
     finally:
-        release_connection(conn)
+        conn.close()
 
 # --- Package Functions ---
 
 def get_packages():
     conn = get_connection()
     try:
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute("SELECT * FROM packages ORDER BY price ASC")
         packages = cur.fetchall()
         result = {}
-        for p in packages:
+        for row in packages:
+            p = dict(row)
             result[p['identifier']] = p
-        cur.close()
     finally:
-        release_connection(conn)
+        conn.close()
     return result
 
 def add_package(identifier, name, price):
@@ -369,39 +300,35 @@ def add_package(identifier, name, price):
     try:
         cur = conn.cursor()
         try:
-            cur.execute("INSERT INTO packages (identifier, name, price) VALUES (%s, %s, %s)", (identifier, name, price))
+            cur.execute("INSERT INTO packages (identifier, name, price) VALUES (?, ?, ?)", (identifier, name, price))
             conn.commit()
             success = True
-        except psycopg2.IntegrityError:
-            conn.rollback()
+        except sqlite3.IntegrityError:
             success = False
-        cur.close()
     finally:
-        release_connection(conn)
+        conn.close()
     return success
 
 def update_package_price(identifier, new_price):
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute("UPDATE packages SET price = %s WHERE identifier = %s", (new_price, identifier))
+        cur.execute("UPDATE packages SET price = ? WHERE identifier = ?", (new_price, identifier))
         updated = cur.rowcount > 0
         conn.commit()
-        cur.close()
     finally:
-        release_connection(conn)
+        conn.close()
     return updated
 
 def delete_package(identifier):
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute("DELETE FROM packages WHERE identifier = %s", (identifier,))
+        cur.execute("DELETE FROM packages WHERE identifier = ?", (identifier,))
         deleted = cur.rowcount > 0
         conn.commit()
-        cur.close()
     finally:
-        release_connection(conn)
+        conn.close()
     return deleted
 
 # --- Payment Method Functions ---
@@ -409,12 +336,11 @@ def delete_package(identifier):
 def get_payment_methods():
     conn = get_connection()
     try:
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT * FROM payment_methods WHERE is_active = TRUE ORDER BY id ASC")
-        methods = cur.fetchall()
-        cur.close()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM payment_methods WHERE is_active = 1 ORDER BY id ASC")
+        methods = [dict(row) for row in cur.fetchall()]
     finally:
-        release_connection(conn)
+        conn.close()
     return methods
 
 def add_payment_method(name, account_number, account_name, qr_photo_id=None):
@@ -423,24 +349,22 @@ def add_payment_method(name, account_number, account_name, qr_photo_id=None):
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO payment_methods (name, account_number, account_name, qr_photo_id) 
-            VALUES (%s, %s, %s, %s)
+            VALUES (?, ?, ?, ?)
         """, (name, account_number, account_name, qr_photo_id))
         conn.commit()
-        cur.close()
     finally:
-        release_connection(conn)
+        conn.close()
     return True
 
 def delete_payment_method(method_id):
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute("DELETE FROM payment_methods WHERE id = %s", (method_id,))
+        cur.execute("DELETE FROM payment_methods WHERE id = ?", (method_id,))
         deleted = cur.rowcount > 0
         conn.commit()
-        cur.close()
     finally:
-        release_connection(conn)
+        conn.close()
     return deleted
 
 # --- User Functions ---
@@ -448,58 +372,55 @@ def delete_payment_method(method_id):
 def get_user(user_id, username=None):
     conn = get_connection()
     try:
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT * FROM users WHERE user_id = %s", (user_id,))
-        user = cur.fetchone()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+        row = cur.fetchone()
         
-        if not user:
+        if not row:
             # Create new user
-            cur.execute("INSERT INTO users (user_id, username, balance) VALUES (%s, %s, 0) RETURNING *", (user_id, username))
-            user = cur.fetchone()
+            cur.execute("INSERT INTO users (user_id, username, balance) VALUES (?, ?, 0)", (user_id, username))
             conn.commit()
-        elif username and user['username'] != username:
-            # Update username if changed
-            cur.execute("UPDATE users SET username = %s WHERE user_id = %s", (username, user_id))
-            conn.commit()
-            user['username'] = username
+            cur.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+            row = cur.fetchone()
+            user = dict(row)
+        else:
+            user = dict(row)
+            if username and user['username'] != username:
+                # Update username if changed
+                cur.execute("UPDATE users SET username = ? WHERE user_id = ?", (username, user_id))
+                conn.commit()
+                user['username'] = username
             
-        cur.close()
     finally:
-        release_connection(conn)
+        conn.close()
     return user
 
 def update_balance(user_id, amount):
-    """
-    amount can be positive (add funds) or negative (spend funds).
-    """
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute("UPDATE users SET balance = balance + %s WHERE user_id = %s", (amount, user_id))
+        cur.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, user_id))
         conn.commit()
-        cur.close()
     finally:
-        release_connection(conn)
+        conn.close()
 
 def update_user_username(user_id, username):
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute("UPDATE users SET username = %s WHERE user_id = %s", (username, user_id))
+        cur.execute("UPDATE users SET username = ? WHERE user_id = ?", (username, user_id))
         conn.commit()
-        cur.close()
     finally:
-        release_connection(conn)
+        conn.close()
 
 def get_all_users(limit=20, offset=0):
     conn = get_connection()
     try:
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT * FROM users ORDER BY joined_at DESC LIMIT %s OFFSET %s", (limit, offset))
-        users = cur.fetchall()
-        cur.close()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users ORDER BY joined_at DESC LIMIT ? OFFSET ?", (limit, offset))
+        users = [dict(row) for row in cur.fetchall()]
     finally:
-        release_connection(conn)
+        conn.close()
     return users
 
 def get_total_users_count():
@@ -508,21 +429,22 @@ def get_total_users_count():
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM users")
         count = cur.fetchone()[0]
-        cur.close()
     finally:
-        release_connection(conn)
+        conn.close()
     return count
 
 def add_user(user_id):
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute("INSERT INTO users (user_id, balance) VALUES (%s, 0) ON CONFLICT (user_id) DO NOTHING", (user_id,))
-        conn.commit()
-        success = cur.rowcount > 0
-        cur.close()
+        try:
+            cur.execute("INSERT OR IGNORE INTO users (user_id, balance) VALUES (?, 0)", (user_id,))
+            conn.commit()
+            success = cur.rowcount > 0
+        except:
+            success = False
     finally:
-        release_connection(conn)
+        conn.close()
     return success
 
 # --- History Functions ---
@@ -533,27 +455,25 @@ def add_history(user_id, package_name, code):
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO history (user_id, package_name, code)
-            VALUES (%s, %s, %s)
+            VALUES (?, ?, ?)
         """, (user_id, package_name, code))
         conn.commit()
-        cur.close()
     finally:
-        release_connection(conn)
+        conn.close()
 
 def get_history(user_id, limit=5):
     conn = get_connection()
     try:
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute("""
             SELECT * FROM history 
-            WHERE user_id = %s 
+            WHERE user_id = ? 
             ORDER BY purchase_date DESC 
-            LIMIT %s
+            LIMIT ?
         """, (user_id, limit))
-        history = cur.fetchall()
-        cur.close()
+        history = [dict(row) for row in cur.fetchall()]
     finally:
-        release_connection(conn)
+        conn.close()
     return history
 
 # --- Stock Functions ---
@@ -563,26 +483,23 @@ def add_stock(package_id, code):
     try:
         cur = conn.cursor()
         try:
-            cur.execute("INSERT INTO stocks (package_id, code) VALUES (%s, %s)", (package_id, code))
+            cur.execute("INSERT INTO stocks (package_id, code) VALUES (?, ?)", (package_id, code))
             conn.commit()
             success = True
-        except psycopg2.IntegrityError:
-            conn.rollback()
+        except sqlite3.IntegrityError:
             success = False
-        cur.close()
     finally:
-        release_connection(conn)
+        conn.close()
     return success
 
 def get_stock_count(package_id):
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM stocks WHERE package_id = %s", (package_id,))
+        cur.execute("SELECT COUNT(*) FROM stocks WHERE package_id = ?", (package_id,))
         count = cur.fetchone()[0]
-        cur.close()
     finally:
-        release_connection(conn)
+        conn.close()
     return count
 
 def get_and_use_stock(package_id):
@@ -590,25 +507,26 @@ def get_and_use_stock(package_id):
     try:
         cur = conn.cursor()
         
-        # Select a code and lock the row to prevent race conditions
+        # SQLite doesn't have FOR UPDATE SKIP LOCKED, so we just select one
+        # and delete it in a transaction
+        cur.execute("BEGIN IMMEDIATE")
+        
         cur.execute("""
             SELECT id, code FROM stocks 
-            WHERE package_id = %s 
+            WHERE package_id = ? 
             LIMIT 1 
-            FOR UPDATE SKIP LOCKED
         """, (package_id,))
         
         row = cur.fetchone()
         if row:
             stock_id, code = row
-            # Delete the stock after retrieving it (or you could move it to a 'used_stocks' table)
-            cur.execute("DELETE FROM stocks WHERE id = %s", (stock_id,))
+            # Delete the stock after retrieving it
+            cur.execute("DELETE FROM stocks WHERE id = ?", (stock_id,))
             conn.commit()
-            cur.close()
             return code
         
         conn.rollback()
-        cur.close()
     finally:
-        release_connection(conn)
+        conn.close()
     return None
+
