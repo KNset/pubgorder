@@ -794,15 +794,53 @@ def admin_dashboard(message):
     bot.send_message(message.chat.id, "🔧 **Admin Dashboard**", reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data == "admin_check_stock")
-def admin_check_stock_callback(call):
+def admin_check_stock_menu(call):
+    games = db.get_games()
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    
+    # 1. Legacy PUBG (The original packages)
+    markup.add(types.InlineKeyboardButton("🎮 PUBG UC (Legacy)", callback_data="adm_chk_stk_legacy"))
+    
+    # 2. New Games
+    for g in games:
+        markup.add(types.InlineKeyboardButton(f"🎮 {g['name']}", callback_data=f"adm_chk_stk_g_{g['id']}"))
+        
+    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="admin_back_main"))
+    bot.edit_message_text("📊 **Select Game to Check Stock:**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda c: c.data == "adm_chk_stk_legacy")
+def admin_check_stock_legacy(call):
     uc_details = db.get_packages()
-    report = "📦 **လက်ရှိ Stock စာရင်း**\n"
+    report = "📦 **PUBG UC (Legacy) Stock**\n\n"
     for k, v in uc_details.items():
         cnt = db.get_stock_count(k)
-        report += f"🔹 {v['name']}: **{cnt}** ခုကျန်\n"
-    
+        report += f"🔹 {v['name']}: **{cnt}** Codes\n"
+        
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="admin_back_main"))
+    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="admin_check_stock"))
+    
+    bot.edit_message_text(report, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith('adm_chk_stk_g_'))
+def admin_check_stock_game(call):
+    gid = int(call.data.split('_')[4])
+    
+    # Get Game Name
+    games = db.get_games()
+    game_name = next((g['name'] for g in games if g['id'] == gid), "Unknown Game")
+    
+    packages = db.get_game_packages(gid)
+    
+    report = f"📦 **{game_name} Stock**\n\n"
+    if not packages:
+        report += "No packages found."
+    else:
+        for p in packages:
+            cnt = db.get_stock_count(str(p['id']))
+            report += f"🔹 {p['name']}: **{cnt}** Codes\n"
+            
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="admin_check_stock"))
     
     bot.edit_message_text(report, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
