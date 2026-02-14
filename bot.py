@@ -1018,33 +1018,22 @@ def admin_manage_games(call):
     markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="admin_back_main"))
     bot.edit_message_text("🎮 **Select Game to Manage:**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
-@bot.callback_query_handler(func=lambda c: c.data == "admin_add_token_game")
-def admin_add_token_game_start(call):
+@bot.callback_query_handler(func=lambda c: c.data == "admin_add_game")
+def admin_add_game_start(call):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     markup.add("❌ Cancel")
-    msg = bot.send_message(call.message.chat.id, "🎮 **Enter New Token Game Name (e.g., PUBG):**", reply_markup=markup)
-    bot.register_next_step_handler(msg, admin_add_token_game_save)
+    msg = bot.send_message(call.message.chat.id, "🎮 **Enter New Game Name (e.g., Free Fire):**", reply_markup=markup)
+    bot.register_next_step_handler(msg, admin_add_game_save)
 
-def admin_add_token_game_save(message):
+def admin_add_game_save(message):
     if message.text == "❌ Cancel":
         return bot.send_message(message.chat.id, "❌ Cancelled.", reply_markup=types.ReplyKeyboardRemove())
     
     name = message.text.strip()
-    # Check if game already exists
-    games = db.get_games()
-    if any(g['name'].lower() == name.lower() for g in games):
-        return bot.send_message(message.chat.id, "❌ Game name already exists.", reply_markup=types.ReplyKeyboardRemove())
-
-    # Add game with special identifier or just as a normal game?
-    # Requirement: "bot will give redeem code like pubg"
-    # This implies we need to store STOCK (codes) for this game's packages.
-    # The current system ALREADY supports stock for any package identifier.
-    # We just need to ensure we create packages with unique IDs.
-    
     if db.add_game(name):
-        bot.send_message(message.chat.id, f"✅ **Token Game Added:** {name}\nNow add packages to it in 'Manage Games'.", reply_markup=types.ReplyKeyboardRemove())
+        bot.send_message(message.chat.id, f"✅ **Game Added:** {name}\nNow add packages to it in 'Manage Games'.", reply_markup=types.ReplyKeyboardRemove())
     else:
-        bot.send_message(message.chat.id, "❌ Failed to add game.", reply_markup=types.ReplyKeyboardRemove())
+        bot.send_message(message.chat.id, "❌ Failed. Game name already exists.", reply_markup=types.ReplyKeyboardRemove())
 
 # ... (Existing admin_add_game flow remains for manual games if needed, but 'Token Game' implies auto-delivery)
 # Actually, the logic for 'buy_gp_' handles manual vs auto?
