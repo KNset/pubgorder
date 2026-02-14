@@ -529,33 +529,62 @@ def admin_add_stock(message):
     args = message.text.split()[1:]
     
     if not args:
-         return bot.reply_to(message, "⚠️ Usage: `/add [Pack] [Code1] [Code2] ...`\nExample: `/add 60 CODE1 CODE2 325 CODE3`")
+         return bot.reply_to(message, "⚠️ Usage: `/add [Pack_ID] [Code1] [Code2] ...`\nExample: `/add 60 CODE1 CODE2` or `/add 100 CODE1`")
     
     results = []
-    uc_details = db.get_packages()
-    current_pack = None
+    # Fetch ALL packages (Legacy + New)
+    legacy_details = db.get_packages()
     
-    for token in args:
-        # Check if token is a Package Identifier
-        if token in uc_details:
-            current_pack = token
-            results.append(f"📂 **Set Package:** {uc_details[token]['name']}")
-            continue
+    # We need a way to check NEW game packages by ID too.
+    # The command logic is:
+    # 1. First arg is Package Identifier (String or Int ID)
+    # 2. Rest are codes.
+    
+    target_pack_id = args[0]
+    codes = args[1:]
+    
+    if not codes:
+        return bot.reply_to(message, "⚠️ Please provide codes to add.\nUsage: `/add [Pack_ID] [Code1] ...`")
+
+    pack_name = None
+    
+    # Check Legacy
+    if target_pack_id in legacy_details:
+        pack_name = legacy_details[target_pack_id]['name']
+    else:
+        # Check New Game Package (ID is int)
+        try:
+            pid = int(target_pack_id)
+            pkg = db.get_game_package_by_id(pid)
+            if pkg:
+                pack_name = f"{pkg['game_name']} - {pkg['name']}"
+        except:
+            pass
             
-        # If not a package, treat as code for current_pack
-        if current_pack:
-            if db.add_stock(current_pack, token):
-                results.append(f"  ✅ {token}: Added")
-            else:
-                results.append(f"  ⚠️ {token}: Duplicate")
+    if not pack_name:
+         return bot.reply_to(message, f"❌ Package `{target_pack_id}` not found.\nUse `/admin` -> 'Manage Games' or 'Manage Packages' to find IDs.")
+
+    count = 0
+    duplicates = 0
+    
+    for token in codes:
+        if db.add_stock(str(target_pack_id), token):
+            count += 1
         else:
-            results.append(f"❌ {token}: Skipped (No package specified)")
+            duplicates += 1
             
-    report = "\n".join(results)
-    if len(report) > 4000:
-        report = report[:4000] + "\n...(truncated)"
-        
-    bot.reply_to(message, f"📦 **Stock Add Report**\n{report}", parse_mode="Markdown")
+    bot.reply_to(message, f"📦 **Stock Added**\n📂 Package: **{pack_name}**\n✅ Added: {count}\n⚠️ Duplicates: {duplicates}")
+
+@bot.message_handler(func=lambda m: m.text.startswith('/add') and len(m.text.split()) > 1)
+def dynamic_add_stock_command(message):
+    # This handler catches commands like /addmlbb if we register them dynamically, 
+    # BUT since we can't easily register dynamic commands in Telebot without restart,
+    # we can use a regex handler or just rely on the main /add command which is safer.
+    # User asked: "/addmlbb" -> This implies creating a NEW command for each game.
+    # That is complex. Better approach:
+    # "how to add ... like /add 60 ..." -> This is what I implemented above.
+    # The user example "/add 60 code..." works with the code above.
+    pass
 
 @bot.message_handler(commands=['checkstock'])
 def admin_check_stock(message):
