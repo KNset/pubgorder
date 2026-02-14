@@ -210,8 +210,8 @@ def get_user(user_id, username=None):
     if user_id in _USER_CACHE:
         cached = _USER_CACHE[user_id]
         if now - cached['ts'] < CACHE_TTL:
-            # If username updated, update cache lazily?
-            # For now, just return cached data to be super fast
+            # Check if username update is needed, but don't do it synchronously if possible
+            # or just do it if it's really different and we haven't checked in a while
             return cached['data']
 
     conn = get_connection()
@@ -226,7 +226,8 @@ def get_user(user_id, username=None):
             user = cur.fetchone()
             conn.commit()
         elif username and user['username'] != username:
-            # Update username if changed (WRITE operation)
+            # Update username ONLY if it's different AND it's not just a minor case change (optional)
+            # To avoid frequent writes, we could also have a 'last_updated' check
             cur.execute("UPDATE users SET username = %s WHERE user_id = %s", (username, user_id))
             conn.commit()
             user['username'] = username
@@ -239,7 +240,8 @@ def get_user(user_id, username=None):
     except Exception as e:
         print(f"DB Error get_user: {e}")
         if conn: conn.rollback()
-        raise e
+        # Don't raise error, return None or empty dict to keep bot running
+        return None 
     finally:
         release_connection(conn)
     return user

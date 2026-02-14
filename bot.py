@@ -16,7 +16,7 @@ def is_admin(user_id):
     # Check if Main Owner OR in Database
     return user_id == ADMIN_ID or db.is_admin(user_id)
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 # --- [၃] Main Menu (Always Ready Buttons) ---
 def main_menu():
@@ -1392,24 +1392,33 @@ def broadcast_photo(message):
     send_broadcast(message, text if text else None, photo_id)
 
 def send_broadcast(message, text, photo_id):
-    users = db.get_all_users(limit=10000) # Fetch all users (might need pagination for huge userbase)
-    count = 0
-    blocked = 0
-    
-    status_msg = bot.reply_to(message, "⏳ Broadcasting...")
-    
-    for u in users:
+    import threading
+    def broadcast_task():
+        users = db.get_all_users(limit=10000)
+        count = 0
+        blocked = 0
+        
         try:
-            if photo_id:
-                bot.send_photo(u['user_id'], photo_id, caption=text, parse_mode="Markdown")
-            else:
-                bot.send_message(u['user_id'], text, parse_mode="Markdown")
-            count += 1
-        except Exception as e:
-            # Blocked or deactivated
-            blocked += 1
-            
-    bot.edit_message_text(f"✅ **Broadcast Complete!**\nSent to: {count}\nFailed/Blocked: {blocked}", status_msg.chat.id, status_msg.message_id, parse_mode="Markdown")
+            status_msg = bot.reply_to(message, "⏳ Broadcasting started in background...")
+        except:
+            return
+
+        for u in users:
+            try:
+                if photo_id:
+                    bot.send_photo(u['user_id'], photo_id, caption=text, parse_mode="Markdown")
+                else:
+                    bot.send_message(u['user_id'], text, parse_mode="Markdown")
+                count += 1
+            except Exception as e:
+                blocked += 1
+                
+        try:
+            bot.edit_message_text(f"✅ **Broadcast Complete!**\nSent to: {count}\nFailed/Blocked: {blocked}", status_msg.chat.id, status_msg.message_id, parse_mode="Markdown")
+        except:
+            pass
+
+    threading.Thread(target=broadcast_task, daemon=True).start()
 
 @bot.message_handler(commands=['tell'])
 def tell_user(message):
@@ -1435,4 +1444,5 @@ def tell_user(message):
 if __name__ == "__main__":
     db.init_db()
     print("Bot is running...")
-    bot.infinity_polling(timeout=10, long_polling_timeout=5)
+    # Optimized Polling for High Load
+    bot.infinity_polling(timeout=20, long_polling_timeout=20)
