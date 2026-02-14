@@ -18,21 +18,20 @@ CACHE_TTL = 1800 # 30 minutes (Increased from 5 mins)
 # Connection Pool
 try:
     db_pool = psycopg2.pool.ThreadedConnectionPool(
-        1,  # minconn: Keep 1 connection alive to avoid handshake delay on first request
-        10, # maxconn
+        5,   # minconn: Keep 5 connections ready
+        40,  # maxconn: Allow up to 40 concurrent DB operations
         dbname=DB_NAME,
         user=DB_USER,
         password=DB_PASS,
         host=DB_HOST,
         port=DB_PORT,
-        connect_timeout=5,
-        # Keep-Alive Settings to prevent firewall drops
+        connect_timeout=10,
         keepalives=1,
         keepalives_idle=30,
         keepalives_interval=10,
         keepalives_count=5
     )
-    print("Database connection pool created.")
+    print("Database connection pool created with maxconn=40.")
 except Exception as e:
     print(f"Error creating connection pool: {e}")
     db_pool = None

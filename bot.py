@@ -10,7 +10,7 @@ import json
 # --- [၁] Configuration ---
 API_TOKEN = '8591995558:AAH-_Fb-iCJ-ANeEiD8oqr0Qts3JlW8qStA'
 ADMIN_ID = 1278018722 # Main Owner
-bot = telebot.TeleBot(API_TOKEN)
+bot = telebot.TeleBot(API_TOKEN, num_threads=40)
 
 def is_admin(user_id):
     # Check if Main Owner OR in Database
