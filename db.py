@@ -18,19 +18,49 @@ CACHE_TTL = 1800 # 30 minutes (Increased from 5 mins)
 # Connection Pool
 try:
     db_pool = psycopg2.pool.ThreadedConnectionPool(
-        0,  # minconn (Set to 0 to avoid holding connections)
+        1,  # minconn: Keep 1 connection alive to avoid handshake delay on first request
         10, # maxconn
         dbname=DB_NAME,
         user=DB_USER,
         password=DB_PASS,
         host=DB_HOST,
         port=DB_PORT,
-        connect_timeout=5 # Fail fast if DB is unreachable
+        connect_timeout=5,
+        # Keep-Alive Settings to prevent firewall drops
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=10,
+        keepalives_count=5
     )
     print("Database connection pool created.")
 except Exception as e:
     print(f"Error creating connection pool: {e}")
     db_pool = None
+
+# Background Pinger to keep connections alive (application level)
+import threading
+import time
+
+def keep_alive_monitor():
+    while True:
+        time.sleep(45) # Ping every 45 seconds
+        if db_pool:
+            try:
+                conn = db_pool.getconn()
+                try:
+                    cur = conn.cursor()
+                    cur.execute("SELECT 1")
+                    cur.close()
+                finally:
+                    db_pool.putconn(conn)
+            except Exception as e:
+                print(f"Keep-alive ping failed: {e}")
+
+# Start monitor thread
+if db_pool:
+    t = threading.Thread(target=keep_alive_monitor, daemon=True)
+    t.start()
+
 
 def get_connection():
     if db_pool:
