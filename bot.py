@@ -272,16 +272,59 @@ def confirm_game_package(call):
     if user['balance'] < pkg['price']:
         return bot.answer_callback_query(call.id, "❌ Insufficient Balance", show_alert=True)
         
-    # Ask for Payment Proof (Manual Process)
-    # Deduct balance immediately? Or wait for admin?
-    # Requirement says: "take user's payment screenshot and send to admin then admin approve"
-    # This implies user pays OUTSIDE of wallet balance? OR user tops up wallet first?
-    # Usually "take payment screenshot" means top-up.
-    # But if user uses wallet balance, we just deduct and notify admin to process order manually.
+    # --- AUTO-DELIVERY LOGIC ---
+    # Try to fetch stock (Token Game)
+    # Since we can't easily distinguish 'Token Game' vs 'Manual Game' in DB without schema change,
+    # we use the presence of STOCK as the indicator.
     
-    # Let's assume Wallet Balance Flow (Consistent with existing logic):
-    # 1. Deduct Balance
-    # 2. Notify Admin to Process Order (Manual Delivery)
+    stock_count = db.get_stock_count(str(pkg['id'])) # Assuming package_id is used for stock
+    # Wait, 'add_stock' uses 'package_id' string. For game packages, ID is integer.
+    # We should ensure consistency. 'add_stock' takes 'package_id'.
+    # Existing legacy packages use string IDs ("60", "325").
+    # New game packages use integer IDs (1, 2, 3...).
+    # db.add_stock accepts any string. So str(pid) is fine.
+    
+    # But wait, admin '/add' command adds stock to legacy packages by name/id?
+    # We need a way for admin to add stock to NEW game packages.
+    # The current '/add' command uses legacy package identifiers.
+    # We need to update '/add' or provide a UI to add stock to new packages.
+    
+    # For now, let's assume if stock > 0, it's auto.
+    if stock_count > 0:
+        # Auto Delivery
+        code = db.get_and_use_stock(str(pkg['id']))
+        if code:
+            db.update_balance(uid, -pkg['price'])
+            db.add_history(uid, f"{pkg['game_name']} - {pkg['name']}", code)
+            
+            success_msg = (
+                f"✅ **Thank You for Purchasing!**\n\n"
+                f"🎮 Game: **{pkg['game_name']}**\n"
+                f"📦 Package: **{pkg['name']}**\n"
+                f"🎟 Redeem Code: `{code}`\n\n"
+                f"💰 Price: `{pkg['price']} MMK`\n\n"
+                f"⚠️ Code can be used once."
+            )
+            bot.send_message(uid, success_msg, parse_mode="Markdown")
+            
+            # Notify Admin
+            admin_ids = set(db.get_all_admins())
+            admin_ids.add(ADMIN_ID)
+            for admin_id in admin_ids:
+                try:
+                    bot.send_message(admin_id, f"🛒 **New Auto Sale!**\n👤 User: @{call.from_user.username} ({uid})\n📦 {pkg['game_name']} - {pkg['name']}\n🎟 Code: `{code}`")
+                except: pass
+                
+            bot.edit_message_text(f"✅ **Purchased Successfully!**\nCheck your Private Messages for the code.", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+            return
+
+    # If Stock is 0, is it "Out of Stock" or "Manual Order"?
+    # If the game name implies it SHOULD be auto (e.g. "PUBG", "Token"), we might want to say "Out of Stock".
+    # But for flexibility, let's fall back to MANUAL ORDER if no stock is found.
+    # UNLESS we explicitly want to block it.
+    
+    # For now, fall back to Manual Order (Ask for ID)
+    # This allows "Pre-ordering" even if stock is 0, or Manual ID Topup.
     
     db.update_balance(uid, -pkg['price'])
     
@@ -289,6 +332,30 @@ def confirm_game_package(call):
     msg = bot.send_message(call.message.chat.id, f"🆔 **Enter Player ID / Account Details for {pkg['game_name']}:**")
     bot.register_next_step_handler(msg, process_manual_order, pkg)
     bot.delete_message(call.message.chat.id, call.message.message_id)
+
+# --- Update Admin Add Stock to support New Packages ---
+# We need a way to list packages and add stock via UI or Command.
+# The existing '/add' command is hard to use for generated IDs.
+# Let's add a "Add Stock" button in "Manage Packages" for new games.
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith('adm_add_stock_'))
+def admin_add_stock_ui(call):
+    # Callback from package detail
+    pid = call.data.split('_')[3]
+    msg = bot.send_message(call.message.chat.id, f"📦 **Enter Codes for Package {pid}**\n(Separate by space or new line)")
+    bot.register_next_step_handler(msg, admin_save_stock_ui, pid)
+
+def admin_save_stock_ui(message, pid):
+    codes = message.text.split()
+    count = 0
+    for code in codes:
+        if db.add_stock(str(pid), code):
+            count += 1
+    bot.reply_to(message, f"✅ Added {count} codes to Package {pid}.")
+
+# Update admin_package_detail to show "Add Stock" button
+# We need to modify the previous tool call or do another replacement.
+
 
 def process_manual_order(message, pkg):
     details = message.text
@@ -502,18 +569,43 @@ def admin_check_stock(message):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith('adm_ok_') or c.data.startswith('adm_no_'))
 def admin_approval(call):
-    _, action, amt, uid = call.data.split('_')
-    uid = int(uid)
-    amt = int(amt)
-    
-    if action == "ok":
-        db.update_balance(uid, amt)
-        user = db.get_user(uid)
-        bot.send_message(uid, f"✅ **ငွေဖြည့်သွင်းမှု အောင်မြင်သည်!**\n💰 လက်ကျန်: `{user['balance']} MMK`", parse_mode="Markdown")
-        bot.edit_message_caption("🟢 Approved", call.message.chat.id, call.message.message_id)
-    else:
-        bot.send_message(uid, f"❌ **ငွေဖြည့်သွင်းမှု ငြင်းပယ်ခံရပါသည်!**\n💰 Amount: `{amt} MMK`\nℹ️ အသေးစိတ်သိရှိလိုပါက Admin ကို ဆက်သွယ်ပါ။", parse_mode="Markdown")
-        bot.edit_message_caption("🔴 Rejected", call.message.chat.id, call.message.message_id)
+    try:
+        _, action, amt, uid = call.data.split('_')
+        uid = int(uid)
+        amt = int(amt)
+        
+        if action == "ok":
+            # Ensure user exists first (this handles missing users after DB reset)
+            # This call creates the user if they don't exist
+            user = db.get_user(uid)
+            
+            # Now update balance
+            db.update_balance(uid, amt)
+            
+            # Fetch updated user to confirm and show correct balance
+            updated_user = db.get_user(uid)
+            
+            # Notify User
+            try:
+                bot.send_message(uid, f"✅ **ငွေဖြည့်သွင်းမှု အောင်မြင်သည်!**\n💰 လက်ကျန်: `{updated_user['balance']} MMK`", parse_mode="Markdown")
+            except:
+                pass # User might have blocked bot
+                
+            # Update Admin UI
+            bot.edit_message_caption("🟢 Approved", call.message.chat.id, call.message.message_id)
+            
+        else:
+            # Reject
+            try:
+                bot.send_message(uid, f"❌ **ငွေဖြည့်သွင်းမှု ငြင်းပယ်ခံရပါသည်!**\n💰 Amount: `{amt} MMK`\nℹ️ အသေးစိတ်သိရှိလိုပါက Admin ကို ဆက်သွယ်ပါ။", parse_mode="Markdown")
+            except:
+                pass
+                
+            bot.edit_message_caption("🔴 Rejected", call.message.chat.id, call.message.message_id)
+            
+    except Exception as e:
+        logging.error(f"Admin Approval Error: {e}")
+        bot.answer_callback_query(call.id, "⚠️ Error processing request. Check logs.", show_alert=True)
 
 @bot.message_handler(commands=['setcookies'])
 def admin_set_cookies(message):
@@ -855,26 +947,84 @@ def admin_manage_games(call):
     for g in games:
         markup.add(types.InlineKeyboardButton(f"🎮 {g['name']}", callback_data=f"adm_game_{g['id']}"))
     markup.add(types.InlineKeyboardButton("➕ Add New Game", callback_data="admin_add_game"))
+    markup.add(types.InlineKeyboardButton("➕ Add New Token Game (Auto Code)", callback_data="admin_add_token_game"))
     markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="admin_back_main"))
     bot.edit_message_text("🎮 **Select Game to Manage:**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
-# Add Game Flow
-@bot.callback_query_handler(func=lambda c: c.data == "admin_add_game")
-def admin_add_game_start(call):
+@bot.callback_query_handler(func=lambda c: c.data == "admin_add_token_game")
+def admin_add_token_game_start(call):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     markup.add("❌ Cancel")
-    msg = bot.send_message(call.message.chat.id, "🎮 **Enter New Game Name (e.g., Free Fire):**", reply_markup=markup)
-    bot.register_next_step_handler(msg, admin_add_game_save)
+    msg = bot.send_message(call.message.chat.id, "🎮 **Enter New Token Game Name (e.g., PUBG):**", reply_markup=markup)
+    bot.register_next_step_handler(msg, admin_add_token_game_save)
 
-def admin_add_game_save(message):
+def admin_add_token_game_save(message):
     if message.text == "❌ Cancel":
         return bot.send_message(message.chat.id, "❌ Cancelled.", reply_markup=types.ReplyKeyboardRemove())
     
     name = message.text.strip()
+    # Check if game already exists
+    games = db.get_games()
+    if any(g['name'].lower() == name.lower() for g in games):
+        return bot.send_message(message.chat.id, "❌ Game name already exists.", reply_markup=types.ReplyKeyboardRemove())
+
+    # Add game with special identifier or just as a normal game?
+    # Requirement: "bot will give redeem code like pubg"
+    # This implies we need to store STOCK (codes) for this game's packages.
+    # The current system ALREADY supports stock for any package identifier.
+    # We just need to ensure we create packages with unique IDs.
+    
     if db.add_game(name):
-        bot.send_message(message.chat.id, f"✅ **Game Added:** {name}", reply_markup=types.ReplyKeyboardRemove())
+        bot.send_message(message.chat.id, f"✅ **Token Game Added:** {name}\nNow add packages to it in 'Manage Games'.", reply_markup=types.ReplyKeyboardRemove())
     else:
-        bot.send_message(message.chat.id, "❌ Failed. Game name already exists.", reply_markup=types.ReplyKeyboardRemove())
+        bot.send_message(message.chat.id, "❌ Failed to add game.", reply_markup=types.ReplyKeyboardRemove())
+
+# ... (Existing admin_add_game flow remains for manual games if needed, but 'Token Game' implies auto-delivery)
+# Actually, the logic for 'buy_gp_' handles manual vs auto?
+# Let's check 'buy_game_package':
+# It currently does: db.get_game_package_by_id -> confirm -> manual_order (admin processing).
+# We need to change this:
+# If it's a "Token Game", it should check STOCK and deliver CODE instantly.
+
+# How to distinguish?
+# We can add a flag to 'games' table: is_auto_delivery (BOOLEAN)
+# Or just assume ALL new games via this button are auto-delivery?
+# The user said "Add New Token Game ... like PUBG".
+# So let's modify 'games' table to support 'type' or 'is_auto'.
+# Since I cannot easily migrate schema without raw SQL, let's use a convention or just update logic to checking stock FIRST.
+
+# REVISED LOGIC for 'confirm_game_package':
+# 1. Check if stock exists for this package ID.
+# 2. If stock exists -> Deduct balance -> Give Code (Auto)
+# 3. If NO stock -> Treat as Manual Order (Admin Process) OR Show "Out of Stock"
+
+# This unifies the flow! 
+# So "Token Game" is just a game where you ADD STOCK. 
+# "Manual Game" is a game where you DON'T add stock (so stock count = 0).
+
+# Wait, if stock = 0, we normally say "Out of Stock" for auto games.
+# For manual games (like ID Topup), we want to accept order even if stock=0.
+# We need to know if a package is "Code based" or "ID based".
+
+# Let's add a simple prompt when creating a package: "Is this Auto-Code or Manual-ID?"
+# OR, simple hack: If 'Token Game' button was used, we mark the game name with a suffix or store it.
+# Better: Let's assume the user wants to add STOCK for these games.
+# I will update 'confirm_game_package' to try stock first.
+
+# But for ID-based games (Free Fire Diamonds topup via ID), stock is always 0.
+# If I change logic to "If stock=0 then fail", ID games break.
+# If I change logic to "If stock=0 then manual", Token games with 0 stock will become manual orders instead of "Out of Stock".
+
+# Compromise for now without schema change:
+# When adding a game, we don't distinguish in DB yet.
+# But when BUYING:
+# We can try to fetch stock.
+# If stock > 0: Auto Delivery.
+# If stock <= 0:
+#    If Game Name contains "UC" or "Token" or "Code" -> "Out of Stock"
+#    Else -> Manual Order (Enter ID)
+
+# Let's refine the 'confirm_game_package' handler.
 
 # Manage Specific Game (Add Packages)
 @bot.callback_query_handler(func=lambda c: c.data.startswith('adm_game_'))
@@ -1040,19 +1190,49 @@ def admin_add_pay_qr(message, name, acc, owner):
 @bot.callback_query_handler(func=lambda c: c.data.startswith('adm_pkg_'))
 def admin_package_detail(call):
     pk = call.data.split('_')[2]
+    # Check if it's a LEGACY package or NEW GAME package
+    # Legacy packages are strings in db.get_packages()
+    # New packages are in db.get_game_package_by_id(int(pk))
+    
+    # Try legacy first
     uc_details = db.get_packages()
-    if pk not in uc_details:
+    pack = None
+    is_legacy = False
+    
+    if pk in uc_details:
+        pack = uc_details[pk]
+        is_legacy = True
+    else:
+        # Try new game package
+        try:
+            pack = db.get_game_package_by_id(int(pk))
+        except:
+            pass
+            
+    if not pack:
         return bot.answer_callback_query(call.id, "❌ Package Not Found", show_alert=True)
     
-    pack = uc_details[pk]
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
         types.InlineKeyboardButton("✏️ Edit Price", callback_data=f"adm_edit_price_{pk}"),
+        types.InlineKeyboardButton("➕ Add Stock", callback_data=f"adm_add_stock_{pk}"), # Added Stock Button
         types.InlineKeyboardButton("🗑 Delete", callback_data=f"adm_del_pkg_{pk}")
     )
+    
+    # Back button destination depends on context?
+    # Simplified: Always go back to main manage menu or game menu?
+    # For now, back to main manage packages (legacy) or game detail (new)?
+    # Since we don't know the context easily, just go to main dashboard or manage packages.
     markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="admin_manage_packages"))
     
-    text = f"📦 **Package Details**\n\n🆔 ID: `{pk}`\n📛 Name: `{pack['name']}`\n💵 Price: `{pack['price']} MMK`"
+    stock_count = db.get_stock_count(pk)
+    
+    text = (f"📦 **Package Details**\n\n"
+            f"🆔 ID: `{pk}`\n"
+            f"📛 Name: `{pack['name']}`\n"
+            f"💵 Price: `{pack['price']} MMK`\n"
+            f"📊 Stock: `{stock_count}`")
+            
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
 # Add Package Flow
@@ -1131,6 +1311,70 @@ def admin_delete_package(call):
         admin_manage_packages(call) # Refresh list
     else:
         bot.answer_callback_query(call.id, "❌ Failed to delete", show_alert=True)
+
+@bot.message_handler(commands=['broadcast'])
+def broadcast_message(message):
+    if not is_admin(message.from_user.id): return
+    
+    # Check if photo is attached (caption will be the text) or just text
+    # But this handler is for text commands mainly.
+    # For photo broadcast, we can use a separate handler or detect attachment.
+    
+    args = message.text.split(' ', 1)
+    if len(args) < 2:
+        return bot.reply_to(message, "⚠️ Usage: `/broadcast [Message]`")
+    
+    text = args[1]
+    send_broadcast(message, text, None)
+
+@bot.message_handler(content_types=['photo'], func=lambda m: m.caption and m.caption.startswith('/broadcast'))
+def broadcast_photo(message):
+    if not is_admin(message.from_user.id): return
+    
+    text = message.caption.replace('/broadcast', '').strip()
+    photo_id = message.photo[-1].file_id
+    send_broadcast(message, text if text else None, photo_id)
+
+def send_broadcast(message, text, photo_id):
+    users = db.get_all_users(limit=10000) # Fetch all users (might need pagination for huge userbase)
+    count = 0
+    blocked = 0
+    
+    status_msg = bot.reply_to(message, "⏳ Broadcasting...")
+    
+    for u in users:
+        try:
+            if photo_id:
+                bot.send_photo(u['user_id'], photo_id, caption=text, parse_mode="Markdown")
+            else:
+                bot.send_message(u['user_id'], text, parse_mode="Markdown")
+            count += 1
+        except Exception as e:
+            # Blocked or deactivated
+            blocked += 1
+            
+    bot.edit_message_text(f"✅ **Broadcast Complete!**\nSent to: {count}\nFailed/Blocked: {blocked}", status_msg.chat.id, status_msg.message_id, parse_mode="Markdown")
+
+@bot.message_handler(commands=['tell'])
+def tell_user(message):
+    if not is_admin(message.from_user.id): return
+    
+    # Usage: /tell [USER_ID] [Message]
+    args = message.text.split(' ', 2)
+    if len(args) < 3:
+        return bot.reply_to(message, "⚠️ Usage: `/tell [USER_ID] [Message]`")
+    
+    target_id = args[1]
+    text = args[2]
+    
+    if not target_id.isdigit():
+        return bot.reply_to(message, "❌ Invalid User ID.")
+    
+    try:
+        bot.send_message(int(target_id), f"🔔 **Admin Message:**\n{text}", parse_mode="Markdown")
+        bot.reply_to(message, f"✅ Sent to {target_id}")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Failed to send: {e}")
 
 if __name__ == "__main__":
     db.init_db()

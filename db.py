@@ -13,18 +13,19 @@ DB_PORT = os.getenv("DB_PORT", "5432")
 
 # Global Cache
 _USER_CACHE = {} # {user_id: {'data': user_row, 'ts': timestamp}}
-CACHE_TTL = 300 # 5 minutes
+CACHE_TTL = 1800 # 30 minutes (Increased from 5 mins)
 
 # Connection Pool
 try:
     db_pool = psycopg2.pool.ThreadedConnectionPool(
-        1,  # minconn
-        10, # maxconn (Increased slightly for threaded)
+        0,  # minconn (Set to 0 to avoid holding connections)
+        10, # maxconn
         dbname=DB_NAME,
         user=DB_USER,
         password=DB_PASS,
         host=DB_HOST,
-        port=DB_PORT
+        port=DB_PORT,
+        connect_timeout=5 # Fail fast if DB is unreachable
     )
     print("Database connection pool created.")
 except Exception as e:
@@ -507,9 +508,9 @@ def is_admin(user_id):
     now = time.time()
     cache_key = f"admin_{user_id}"
     if cache_key in _USER_CACHE:
-         cached = _USER_CACHE[cache_key]
-         if now - cached['ts'] < CACHE_TTL:
-             return cached['data']
+        cached = _USER_CACHE[cache_key]
+        if now - cached['ts'] < CACHE_TTL:
+            return cached['data']
 
     conn = get_connection()
     try:
@@ -539,7 +540,7 @@ def add_admin(user_id):
             if cache_key in _USER_CACHE:
                 del _USER_CACHE[cache_key]
                 
-        except:
+        except Exception:
             success = False
         cur.close()
     finally:
