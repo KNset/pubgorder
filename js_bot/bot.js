@@ -477,6 +477,10 @@ bot.on('callback_query', async (query) => {
             bot.editMessageText("🛒 **Select Game:**", { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
         }
     }
+    
+    else if (data === 'cancel_order') {
+        bot.editMessageText("❌ **Purchase Cancelled.**", { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' });
+    }
 });
 
 // Admin Manual Order Actions
