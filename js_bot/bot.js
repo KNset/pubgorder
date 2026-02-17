@@ -683,12 +683,12 @@ bot.onText(/\/add ([\s\S]+)/, async (msg, match) => {
         }
     }
     
-    let msg = `📦 **Stock Added**\n📂 Package: **${packName}**\n✅ Added: ${count}\n⚠️ Duplicates/Failed: ${duplicates}`;
+    let outputMsg = `📦 **Stock Added**\n📂 Package: **${packName}**\n✅ Added: ${count}\n⚠️ Duplicates/Failed: ${duplicates}`;
     if (failedCodes.length > 0) {
-        msg += `\n\n**Examples of Failed Codes:**\n` + failedCodes.map(c => `\`${c}\``).join('\n');
+        outputMsg += `\n\n**Examples of Failed Codes:**\n` + failedCodes.map(c => `\`${c}\``).join('\n');
     }
     
-    bot.sendMessage(msg.chat.id, msg, { parse_mode: 'Markdown' });
+    bot.sendMessage(msg.chat.id, outputMsg, { parse_mode: 'Markdown' });
 });
 
 // Admin Dashboard
