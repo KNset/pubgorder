@@ -720,28 +720,67 @@ bot.on('callback_query', async (query) => {
     }
     else if (data === 'adm_chk_stk_legacy') {
         const packages = await db.get_packages();
-        let report = "📦 **PUBG UC (Legacy) Stock**\n\n";
+        const inline_keyboard = [];
+        
         for (const k of Object.keys(packages)) {
             const cnt = await db.get_stock_count(k);
-            report += `🔹 ${packages[k].name}: **${cnt}** Codes\n`;
+            inline_keyboard.push([{ text: `🔹 ${packages[k].name}: ${cnt}`, callback_data: `adm_view_codes_${k}` }]);
         }
-        const inline_keyboard = [[{ text: "🔙 Back", callback_data: "admin_check_stock" }]];
-        bot.editMessageText(report, { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
+        
+        inline_keyboard.push([{ text: "🔙 Back", callback_data: "admin_check_stock" }]);
+        bot.editMessageText("📦 **PUBG UC (Legacy) Stock**\nClick package to view codes:", { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
     }
+    
     else if (data.startsWith('adm_chk_stk_g_')) {
         const gid = data.split('_')[4];
         const packages = await db.get_game_packages(gid);
-        let report = `📦 **Game Stock**\n\n`;
-        if (packages.length === 0) report += "No packages found.";
-        else {
+        const inline_keyboard = [];
+        
+        if (packages.length === 0) {
+            bot.answerCallbackQuery(query.id, { text: "No packages found." });
+        } else {
             for (const p of packages) {
                 const cnt = await db.get_stock_count(String(p.id));
-                report += `🔹 ${p.name}: **${cnt}** Codes\n`;
+                inline_keyboard.push([{ text: `🔹 ${p.name}: ${cnt}`, callback_data: `adm_view_codes_${p.id}` }]);
             }
         }
-        const inline_keyboard = [[{ text: "🔙 Back", callback_data: "admin_check_stock" }]];
-        bot.editMessageText(report, { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
+        
+        inline_keyboard.push([{ text: "🔙 Back", callback_data: "admin_check_stock" }]);
+        bot.editMessageText(`📦 **Game Stock**\nClick package to view codes:`, { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
     }
+    
+    else if (data.startsWith('adm_view_codes_')) {
+        const pid = data.split('_')[3];
+        const codes = await db.get_stock_codes(pid);
+        
+        // Check if legacy or new to get name
+        let name = pid;
+        const legacyPkgs = await db.get_packages();
+        if (legacyPkgs[pid]) name = legacyPkgs[pid].name;
+        else {
+            const newPkg = await db.get_game_package_by_id(pid);
+            if (newPkg) name = newPkg.name;
+        }
+        
+        if (codes.length === 0) {
+            bot.answerCallbackQuery(query.id, { text: `No codes for ${name}`, show_alert: true });
+        } else {
+            // Send as a new message because it might be long
+            let msg = `📦 **Codes for ${name}** (${codes.length}):\n\n`;
+            codes.forEach(c => msg += `\`${c}\`\n`);
+            
+            // Split if too long (Telegram limit 4096)
+            if (msg.length > 4000) {
+                const chunks = msg.match(/.{1,4000}/g);
+                for (const chunk of chunks) {
+                    await bot.sendMessage(chatId, chunk, { parse_mode: 'Markdown' });
+                }
+            } else {
+                await bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
+            }
+        }
+    }
+
     else if (data === 'admin_back_main') {
         const inline_keyboard = [
             [{ text: "📊 Check Stock", callback_data: "admin_check_stock" }],

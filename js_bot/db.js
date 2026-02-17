@@ -525,6 +525,15 @@ async function get_game_package_by_id(package_id) {
     }
 }
 
+async function get_stock_codes(package_id) {
+    try {
+        const res = await query("SELECT code FROM stocks WHERE package_id = $1 ORDER BY added_at ASC", [package_id]);
+        return res.rows.map(r => r.code);
+    } catch (e) {
+        return [];
+    }
+}
+
 // Export functions
 module.exports = {
     init_db,
@@ -535,6 +544,7 @@ module.exports = {
     get_game_packages,
     get_game_package_by_id,
     get_stock_count,
+    get_stock_codes, // Added this
     get_and_use_stock,
     add_stock,
     add_history,
