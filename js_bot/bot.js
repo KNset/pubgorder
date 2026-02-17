@@ -828,12 +828,14 @@ bot.on('callback_query', async (query) => {
     }
 
     else if (data === 'admin_manage_games') {
-        const games = await db.get_games();
+        // Force refresh cache to show newly added game
+        const games = await db.query("SELECT * FROM games WHERE is_active = TRUE ORDER BY id ASC").then(res => res.rows);
         const inline_keyboard = [];
         games.forEach(g => {
             inline_keyboard.push([{ text: `🎮 ${g.name}`, callback_data: `adm_game_${g.id}` }]);
         });
         inline_keyboard.push([{ text: "➕ Add New Token Game", callback_data: "admin_add_token_game" }]);
+        inline_keyboard.push([{ text: "➕ Add Normal Game", callback_data: "admin_add_normal_game" }]);
         inline_keyboard.push([{ text: "🔙 Back", callback_data: "admin_back_main" }]);
         
         bot.editMessageText("🎮 **Select Game to Manage:**", { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
@@ -857,11 +859,29 @@ bot.on('callback_query', async (query) => {
         });
     }
 
+    else if (data === 'admin_add_normal_game') {
+        const promptMsg = await bot.sendMessage(chatId, "🎮 **Enter New Normal Game Name:**", {
+            reply_markup: { force_reply: true }
+        });
+        
+        bot.onReplyToMessage(chatId, promptMsg.message_id, async (reply) => {
+            const name = reply.text;
+            if (name) {
+                try {
+                    await db.query("INSERT INTO games (name) VALUES ($1)", [name]);
+                    bot.sendMessage(chatId, `✅ **Normal Game Added:** ${name}\nNow add packages for it.`);
+                } catch (e) {
+                    bot.sendMessage(chatId, "❌ Failed. Name might exist.");
+                }
+            }
+        });
+    }
+
     else if (data.startsWith('adm_game_')) {
         const gid = data.split('_')[2];
         const packages = await db.get_game_packages(gid);
         // Escape or use simple text for Game ID
-        let report = `🎮 **Game ID:** ${gid}\n📦 **Packages:**\n`;
+        let report = `🎮 **Game ID:** ${gid}\n📦 **Packages & IDs:**\n(Use these IDs for /add command)\n\n`;
         
         const inline_keyboard = [
             [{ text: "➕ Add Package", callback_data: `adm_add_gp_${gid}` }],
@@ -872,7 +892,7 @@ bot.on('callback_query', async (query) => {
         if (packages.length > 0) {
             packages.forEach(p => {
                 // Ensure no markdown break
-                report += `- ${p.name} (${p.price} MMK)\n`;
+                report += `- **${p.name}**\n   🆔 ID: \`${p.id}\` | 💵 ${p.price} MMK\n`;
             });
         } else {
             report += "(No packages yet)";
