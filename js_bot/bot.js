@@ -494,7 +494,8 @@ bot.on('callback_query', async (query) => {
 // Execute Purchase (Legacy)
 bot.on('callback_query', async (query) => {
     const data = query.data;
-    if (data.startsWith('buy_')) {
+    // Fix conflict with buy_gp_ (New Game Purchase)
+    if (data.startsWith('buy_') && !data.startsWith('buy_gp_')) {
         const pk = data.split('_')[1];
         const userId = query.from.id;
         const packages = await db.get_packages();
