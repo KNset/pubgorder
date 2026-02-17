@@ -270,6 +270,75 @@ bot.on('callback_query', async (query) => {
         
         bot.editMessageText("👇 **Select Package:**", { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
     }
+    else if (data.startsWith('buy_gp_')) {
+        const pid = data.split('_')[2];
+        const pkg = await db.get_game_package_by_id(pid);
+        
+        if (!pkg) return bot.answerCallbackQuery(query.id, { text: "❌ Invalid Package" });
+        
+        const text = `❓ **Confirm Purchase**\n\n🎮 Game: **${pkg.game_name}**\n📦 Pack: **${pkg.name}**\n💵 Price: **${pkg.price} MMK**`;
+        const inline_keyboard = [
+            [{ text: "✅ Buy Now", callback_data: `confirm_gp_${pid}` }],
+            [{ text: "❌ Cancel", callback_data: "cancel_order" }]
+        ];
+        
+        bot.editMessageText(text, { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
+    }
+    else if (data.startsWith('confirm_gp_')) {
+        const pid = data.split('_')[2];
+        const pkg = await db.get_game_package_by_id(pid);
+        const userId = query.from.id;
+        
+        if (!pkg) return bot.answerCallbackQuery(query.id, { text: "❌ Invalid Package" });
+        
+        const user = await db.get_user(userId);
+        if (user.balance < pkg.price) {
+            return bot.answerCallbackQuery(query.id, { text: "❌ Insufficient Balance", show_alert: true });
+        }
+        
+        // Try Auto Delivery (Stock)
+        const code = await db.get_and_use_stock(String(pid));
+        if (code) {
+            await db.update_balance(userId, -pkg.price);
+            await db.add_history(userId, `${pkg.game_name} - ${pkg.name}`, code);
+            
+            const successMsg = `✅ **Purchased!**\n\n🎮 ${pkg.game_name}\n📦 ${pkg.name}\n🎟 Code: \`${code}\`\n💰 Price: ${pkg.price} MMK`;
+            bot.sendMessage(userId, successMsg, { parse_mode: 'Markdown' });
+            bot.editMessageText("✅ **Success! Check PM.**", { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' });
+            return;
+        }
+        
+        // Manual Order Flow (If no stock)
+        await db.update_balance(userId, -pkg.price);
+        // Ask for ID
+        bot.sendMessage(chatId, `🆔 **Enter Player ID / Details for ${pkg.game_name}:**`, { reply_markup: { force_reply: true } })
+           .then(prompt => {
+               bot.onReplyToMessage(chatId, prompt.message_id, async (reply) => {
+                   const details = reply.text;
+                   // Log as Pending
+                   await db.add_history(userId, `${pkg.game_name} - ${pkg.name}`, "Pending (Manual)");
+                   
+                   bot.sendMessage(chatId, "✅ **Order Received!**\nAdmin will process it shortly.");
+                   
+                   // Notify Admin
+                   const adminMsg = `🛒 **New Manual Order**\n👤 User: ${userId}\n🎮 Game: ${pkg.game_name}\n📦 Pack: ${pkg.name}\n📝 Details: \`${details}\`\n💰 Paid: ${pkg.price}`;
+                   const adminMarkup = {
+                       inline_keyboard: [
+                           [{ text: "✅ Done", callback_data: `man_done_${userId}` }],
+                           [{ text: "❌ Refund", callback_data: `man_ref_${userId}_${pkg.price}` }]
+                       ]
+                   };
+                   
+                   const admins = await db.get_all_admins();
+                   const allAdmins = new Set([...admins, ADMIN_ID]);
+                   allAdmins.forEach(aid => {
+                       bot.sendMessage(aid, adminMsg, { reply_markup: adminMarkup, parse_mode: 'Markdown' });
+                   });
+               });
+           });
+           
+        bot.deleteMessage(chatId, msgId); // Remove confirmation menu
+    }
     else if (data === 'back_to_games') {
         // Re-show game list (copy from Games handler)
         const games = await db.get_games();

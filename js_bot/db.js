@@ -322,6 +322,21 @@ async function get_payment_methods() {
     }
 }
 
+async function get_game_package_by_id(package_id) {
+    try {
+        const res = await query(`
+            SELECT gp.*, g.name as game_name 
+            FROM game_packages gp 
+            JOIN games g ON gp.game_id = g.id 
+            WHERE gp.id = $1
+        `, [package_id]);
+        return res.rows[0];
+    } catch (e) {
+        console.error("get_game_package_by_id error:", e);
+        return null;
+    }
+}
+
 // Export functions
 module.exports = {
     init_db,
@@ -330,6 +345,7 @@ module.exports = {
     get_packages,
     get_games,
     get_game_packages,
+    get_game_package_by_id, // Added this
     get_stock_count,
     get_and_use_stock,
     add_stock,
