@@ -687,9 +687,7 @@ bot.onText(/\/admin/, async (msg) => {
     
     const inline_keyboard = [
         [{ text: "📊 Check Stock", callback_data: "admin_check_stock" }],
-        [{ text: "📦 Manage Packages", callback_data: "admin_manage_packages" }],
         [{ text: "🎮 Manage Games", callback_data: "admin_manage_games" }],
-        [{ text: "➕ Add New Package", callback_data: "admin_add_package" }],
         [{ text: "💳 Manage Payments", callback_data: "admin_manage_payments" }],
         [{ text: "👥 Manage Users", callback_data: "admin_manage_users" }],
         [{ text: "❌ Close", callback_data: "admin_close" }]
@@ -708,9 +706,7 @@ bot.on('callback_query', async (query) => {
     }
     else if (data === 'admin_check_stock') {
         const games = await db.get_games();
-        const inline_keyboard = [
-            [{ text: "🎮 PUBG UC (Legacy)", callback_data: "adm_chk_stk_legacy" }]
-        ];
+        const inline_keyboard = [];
         games.forEach(g => {
             inline_keyboard.push([{ text: `🎮 ${g.name}`, callback_data: `adm_chk_stk_g_${g.id}` }]);
         });
@@ -719,16 +715,8 @@ bot.on('callback_query', async (query) => {
         bot.editMessageText("📊 **Select Game to Check Stock:**", { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
     }
     else if (data === 'adm_chk_stk_legacy') {
-        const packages = await db.get_packages();
-        const inline_keyboard = [];
-        
-        for (const k of Object.keys(packages)) {
-            const cnt = await db.get_stock_count(k);
-            inline_keyboard.push([{ text: `🔹 ${packages[k].name}: ${cnt}`, callback_data: `adm_view_codes_${k}` }]);
-        }
-        
-        inline_keyboard.push([{ text: "🔙 Back", callback_data: "admin_check_stock" }]);
-        bot.editMessageText("📦 **PUBG UC (Legacy) Stock**\nClick package to view codes:", { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
+        // Deprecated
+        bot.answerCallbackQuery(query.id, { text: "Legacy system removed." });
     }
     
     else if (data.startsWith('adm_chk_stk_g_')) {
