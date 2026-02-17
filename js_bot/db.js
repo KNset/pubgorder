@@ -92,9 +92,17 @@ async function init_db() {
             CREATE TABLE IF NOT EXISTS games (
                 id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL UNIQUE,
-                is_active BOOLEAN DEFAULT TRUE
+                is_active BOOLEAN DEFAULT TRUE,
+                game_type TEXT DEFAULT 'token' -- 'token' or 'normal'
             );
         `);
+        
+        // Ensure column exists for existing dbs
+        try {
+            await client.query("ALTER TABLE games ADD COLUMN IF NOT EXISTS game_type TEXT DEFAULT 'token'");
+        } catch (e) {
+            // Ignore if column exists
+        }
 
         // Game Packages Table
         await client.query(`
@@ -425,9 +433,9 @@ async function get_api_config(service) {
 }
 
 // Game Management Helpers
-async function add_game(name) {
+async function add_game(name, type = 'token') {
     try {
-        await query("INSERT INTO games (name) VALUES ($1)", [name]);
+        await query("INSERT INTO games (name, game_type) VALUES ($1, $2)", [name, type]);
         _USER_CACHE.delete('games_list');
         return true;
     } catch (e) {

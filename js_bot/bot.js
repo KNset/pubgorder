@@ -849,10 +849,9 @@ bot.on('callback_query', async (query) => {
         bot.onReplyToMessage(chatId, promptMsg.message_id, async (reply) => {
             const name = reply.text;
             if (name) {
-                try {
-                    await db.query("INSERT INTO games (name) VALUES ($1)", [name]);
+                if (await db.add_game(name, 'token')) {
                     bot.sendMessage(chatId, `✅ **Token Game Added:** ${name}\nNow go to 'Manage Games' -> Select '${name}' -> 'Add Package' to set up redeem codes.`);
-                } catch (e) {
+                } else {
                     bot.sendMessage(chatId, "❌ Failed. Name might exist.");
                 }
             }
@@ -867,10 +866,9 @@ bot.on('callback_query', async (query) => {
         bot.onReplyToMessage(chatId, promptMsg.message_id, async (reply) => {
             const name = reply.text;
             if (name) {
-                try {
-                    await db.query("INSERT INTO games (name) VALUES ($1)", [name]);
+                if (await db.add_game(name, 'normal')) {
                     bot.sendMessage(chatId, `✅ **Normal Game Added:** ${name}\nNow add packages for it.`);
-                } catch (e) {
+                } else {
                     bot.sendMessage(chatId, "❌ Failed. Name might exist.");
                 }
             }
@@ -880,8 +878,18 @@ bot.on('callback_query', async (query) => {
     else if (data.startsWith('adm_game_')) {
         const gid = data.split('_')[2];
         const packages = await db.get_game_packages(gid);
-        // Escape or use simple text for Game ID
-        let report = `🎮 **Game ID:** ${gid}\n📦 **Packages & IDs:**\n(Use these IDs for /add command)\n\n`;
+        
+        // Get Game Type
+        const games = await db.get_games();
+        const game = games.find(g => g.id == gid);
+        const isToken = game ? (game.game_type === 'token') : true; // Default to token if unknown
+        
+        let report = `🎮 **Game:** ${game ? game.name : gid}\n`;
+        if (isToken) {
+            report += `📦 **Packages & IDs:**\n(Use these IDs for /add command)\n\n`;
+        } else {
+            report += `📦 **Packages:**\n\n`;
+        }
         
         const inline_keyboard = [
             [{ text: "➕ Add Package", callback_data: `adm_add_gp_${gid}` }],
@@ -891,8 +899,11 @@ bot.on('callback_query', async (query) => {
 
         if (packages.length > 0) {
             packages.forEach(p => {
-                // Ensure no markdown break
-                report += `- **${p.name}**\n   🆔 ID: \`${p.id}\` | 💵 ${p.price} MMK\n`;
+                if (isToken) {
+                    report += `- **${p.name}**\n   🆔 ID: \`${p.id}\` | 💵 ${p.price} MMK\n`;
+                } else {
+                    report += `- **${p.name}** | 💵 ${p.price} MMK\n`;
+                }
             });
         } else {
             report += "(No packages yet)";
