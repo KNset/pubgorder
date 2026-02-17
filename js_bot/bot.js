@@ -299,18 +299,29 @@ bot.on('callback_query', async (query) => {
     if (data.startsWith('adm_ok_') || data.startsWith('adm_no_')) {
         const [_, action, amt, uid] = data.split('_');
         const amount = parseInt(amt);
-        const userId = uid; // String
+        const userId = uid;
+        
+        if (isNaN(amount)) return bot.answerCallbackQuery(query.id, { text: "❌ Invalid Amount" });
         
         if (action === 'ok') {
-            await db.get_user(userId); // Ensure user exists
-            await db.update_balance(userId, amount);
-            const user = await db.get_user(userId);
+            const userBefore = await db.get_user(userId); // Ensure user exists & get current
+            if (!userBefore) return bot.answerCallbackQuery(query.id, { text: "❌ User not found" });
             
-            bot.sendMessage(userId, `✅ **ငွေဖြည့်သွင်းမှု အောင်မြင်သည်!**\n💰 လက်ကျန်: \`${user.balance} MMK\``, { parse_mode: 'Markdown' }).catch(() => {});
-            bot.editMessageCaption("🟢 Approved", { chat_id: query.message.chat.id, message_id: query.message.message_id });
+            const success = await db.update_balance(userId, amount);
+            
+            if (success) {
+                const userAfter = await db.get_user(userId); // Fetch fresh
+                
+                bot.sendMessage(userId, `✅ **Deposit Approved!**\n➕ Added: \`${amount} MMK\`\n💰 Total Balance: \`${userAfter.balance} MMK\``, { parse_mode: 'Markdown' }).catch(() => {});
+                
+                // Update Admin Message
+                bot.editMessageCaption(`🟢 **Approved**\n👤 User: ${userId}\n💰 Added: ${amount}\n💰 Balance: ${userBefore.balance} ➡️ ${userAfter.balance}`, { chat_id: query.message.chat.id, message_id: query.message.message_id, parse_mode: 'Markdown' });
+            } else {
+                bot.answerCallbackQuery(query.id, { text: "❌ Update Failed (DB Error)" });
+            }
         } else {
-            bot.sendMessage(userId, `❌ **ငွေဖြည့်သွင်းမှု ငြင်းပယ်ခံရပါသည်!**\n💰 Amount: \`${amount} MMK\``, { parse_mode: 'Markdown' }).catch(() => {});
-            bot.editMessageCaption("🔴 Rejected", { chat_id: query.message.chat.id, message_id: query.message.message_id });
+            bot.sendMessage(userId, `❌ **Deposit Rejected**\n💰 Amount: \`${amount} MMK\``, { parse_mode: 'Markdown' }).catch(() => {});
+            bot.editMessageCaption(`🔴 **Rejected**\n👤 User: ${userId}\n💰 Amount: ${amount}`, { chat_id: query.message.chat.id, message_id: query.message.message_id, parse_mode: 'Markdown' });
         }
     }
 });
