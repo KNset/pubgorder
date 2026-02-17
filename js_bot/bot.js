@@ -415,6 +415,51 @@ bot.on('callback_query', async (query) => {
     }
 });
 
+// Admin Manual Order Actions
+bot.on('callback_query', async (query) => {
+    const data = query.data;
+    const chatId = query.message.chat.id;
+    const msgId = query.message.message_id;
+
+    if (data.startsWith('man_done_')) {
+        const uid = data.split('_')[2];
+        try {
+            await bot.sendMessage(uid, "✅ **Your Order has been Completed!**\nThank you for shopping.", { parse_mode: 'Markdown' });
+        } catch (e) { console.log("User blocked bot or error sending msg"); }
+        
+        try {
+            // Check if message has a caption (e.g. photo), otherwise edit text
+            // The admin notification for manual order IS a text message, not a photo.
+            // So editMessageCaption will fail. We should use editMessageText.
+            // Wait, previous code used sendMessage for adminMsg, so it's text.
+            await bot.editMessageText("✅ **Order Completed**", { chat_id: chatId, message_id: msgId });
+        } catch (e) {
+            console.error("Edit Done Msg Error:", e.message);
+            // If it WAS a photo/caption (unlikely here but possible if I changed it), try caption
+             try { await bot.editMessageCaption("✅ **Order Completed**", { chat_id: chatId, message_id: msgId }); } catch(e2){}
+        }
+    }
+    
+    else if (data.startsWith('man_ref_')) {
+        const parts = data.split('_');
+        const uid = parts[2];
+        const amount = parseInt(parts[3]);
+        
+        if (!isNaN(amount)) {
+            await db.update_balance(uid, amount);
+            try {
+                await bot.sendMessage(uid, `❌ **Order Cancelled & Refunded.**\n💰 Refunded: ${amount} MMK`, { parse_mode: 'Markdown' });
+            } catch (e) {}
+            
+            try {
+                await bot.editMessageText("🔴 **Order Refunded**", { chat_id: chatId, message_id: msgId });
+            } catch (e) {
+                 try { await bot.editMessageCaption("🔴 **Order Refunded**", { chat_id: chatId, message_id: msgId }); } catch(e2){}
+            }
+        }
+    }
+});
+
 // Admin Commands
 bot.onText(/\/add (.+)/, async (msg, match) => {
     const userId = msg.from.id;
