@@ -408,21 +408,34 @@ bot.on('callback_query', async (query) => {
             return bot.answerCallbackQuery(query.id, { text: "❌ Insufficient Balance", show_alert: true });
         }
         
+        const balBefore = user.balance;
+        
         // Try Auto Delivery (Stock)
         // Use pid as string
         const code = await db.get_and_use_stock(String(pid));
         if (code) {
             await db.update_balance(userId, -pkg.price);
+            const balAfter = balBefore - pkg.price;
+            
             await db.add_history(userId, `${pkg.game_name} - ${pkg.name}`, code);
             
             const successMsg = `✅ **Purchased!**\n\n🎮 ${pkg.game_name}\n📦 ${pkg.name}\n🎟 Code: \`${code}\`\n💰 Price: ${pkg.price} MMK`;
             bot.sendMessage(userId, successMsg, { parse_mode: 'Markdown' });
             bot.editMessageText("✅ **Success! Check PM.**", { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' });
+            
+            // Notify Admins (Auto Sale)
+            const adminMsg = `🛒 **New Sale (Auto)**\n👤 User: ${query.from.username || userId}\n📦 Pack: ${pkg.game_name} - ${pkg.name}\n🎟 Code: \`${code}\`\n\n💰 Before: ${balBefore}\n💰 After: ${balAfter}`;
+            const admins = await db.get_all_admins();
+            const allAdmins = new Set([...admins, ADMIN_ID]);
+            allAdmins.forEach(aid => {
+                bot.sendMessage(aid, adminMsg, { parse_mode: 'Markdown' }).catch(() => {});
+            });
             return;
         }
         
         // Manual Order Flow (If no stock)
         await db.update_balance(userId, -pkg.price);
+        const balAfter = balBefore - pkg.price;
         
         // Ask for ID
         bot.sendMessage(chatId, `🆔 **Enter Player ID / Details for ${pkg.game_name}:**`, { reply_markup: { force_reply: true } })
@@ -435,7 +448,7 @@ bot.on('callback_query', async (query) => {
                    bot.sendMessage(chatId, "✅ **Order Received!**\nAdmin will process it shortly.");
                    
                    // Notify Admin
-                   const adminMsg = `🛒 **New Manual Order**\n👤 User: ${userId}\n🎮 Game: ${pkg.game_name}\n📦 Pack: ${pkg.name}\n📝 Details: \`${details}\`\n💰 Paid: ${pkg.price}`;
+                   const adminMsg = `🛒 **New Manual Order**\n👤 User: ${userId}\n🎮 Game: ${pkg.game_name}\n📦 Pack: ${pkg.name}\n📝 Details: \`${details}\`\n💰 Paid: ${pkg.price}\n\n💰 Before: ${balBefore}\n💰 After: ${balAfter}`;
                    const adminMarkup = {
                        inline_keyboard: [
                            [{ text: "✅ Done", callback_data: `man_done_${userId}` }],
@@ -508,12 +521,16 @@ bot.on('callback_query', async (query) => {
             return bot.answerCallbackQuery(query.id, { text: "❌ လက်ကျန်ငွေ မလုံလောက်ပါ။", show_alert: true });
         }
         
+        const balBefore = user.balance;
+        
         const code = await db.get_and_use_stock(pk);
         if (!code) {
             return bot.answerCallbackQuery(query.id, { text: "⚠️ Stock ပြတ်နေပါသည်။", show_alert: true });
         }
         
         await db.update_balance(userId, -pack.price);
+        const balAfter = balBefore - pack.price;
+        
         await db.add_history(userId, pack.name, code);
         
         const successMsg = `✅ **Thank You for Purchasing!**\n\n📦 Package: **${pack.name}**\n🎟 Redeem Code: \`${code}\`\n\n💰 Price: \`${pack.price} MMK\`\n\n⚠️ Code can be used once.`;
@@ -522,10 +539,11 @@ bot.on('callback_query', async (query) => {
         bot.editMessageText("✅ **Purchased Successfully!**\nCheck your Private Messages for the code.", { chat_id: query.message.chat.id, message_id: query.message.message_id, parse_mode: 'Markdown' });
         
         // Notify Admins
+        const adminMsg = `🛒 **New Sale!**\n👤 User: ${query.from.username}\n📦 Pack: ${pack.name}\n🎟 Code: \`${code}\`\n\n💰 Before: ${balBefore}\n💰 After: ${balAfter}`;
         const admins = await db.get_all_admins();
         const allAdmins = new Set([...admins, ADMIN_ID]);
         allAdmins.forEach(aid => {
-            bot.sendMessage(aid, `🛒 **New Sale!**\n👤 User: ${query.from.username}\n📦 Pack: ${pack.name}\n🎟 Code: \`${code}\``).catch(() => {});
+            bot.sendMessage(aid, adminMsg).catch(() => {});
         });
     }
 });
