@@ -202,6 +202,17 @@ def init_db():
     cur.close()
     release_connection(conn)
     print("Database initialized successfully.")
+    
+    # Pre-warm Cache to avoid delay on first command
+    print("Pre-warming system caches...")
+    try:
+        get_games()
+        get_packages()
+        get_payment_methods()
+        get_all_admins()
+        print("✅ System caches warm and ready.")
+    except Exception as e:
+        print(f"⚠️ Cache pre-warm warning: {e}")
 
 def get_user(user_id, username=None):
     # 1. Check Cache first

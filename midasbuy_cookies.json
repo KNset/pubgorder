@@ -1,0 +1,187 @@
+[
+  {
+    "domain": "www.midasbuy.com",
+    "httpOnly": true,
+    "name": "session_new_facebook_email_token",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": true,
+    "value": ""
+  },
+  {
+    "domain": "www.midasbuy.com",
+    "httpOnly": true,
+    "name": "session_facebook_email_token",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": true,
+    "value": ""
+  },
+  {
+    "domain": "www.midasbuy.com",
+    "expiry": 1773758042,
+    "httpOnly": false,
+    "name": "select_country",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "my"
+  },
+  {
+    "domain": ".midasbuy.com",
+    "expiry": 1778942042,
+    "httpOnly": false,
+    "name": "_gcl_au",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "1.1.1861673636.1771166042"
+  },
+  {
+    "domain": ".midasbuy.com",
+    "expiry": 1805726042,
+    "httpOnly": false,
+    "name": "_ga_NQX2JD8STG",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "GS2.1.s1771166042$o1$g0$t1771166042$j60$l0$h0"
+  },
+  {
+    "domain": ".midasbuy.com",
+    "expiry": 1805726039,
+    "httpOnly": false,
+    "name": "_ga_PNR34BM5B9",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "GS2.2.s1771166039$o1$g0$t1771166039$j60$l0$h0"
+  },
+  {
+    "domain": "www.midasbuy.com",
+    "expiry": 1773758020,
+    "httpOnly": false,
+    "name": "country",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "my"
+  },
+  {
+    "domain": ".midasbuy.com",
+    "expiry": 1771252439,
+    "httpOnly": false,
+    "name": "_gid",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "GA1.2.402045999.1771166039"
+  },
+  {
+    "domain": ".midasbuy.com",
+    "expiry": 1805726042,
+    "httpOnly": false,
+    "name": "_ga",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "GA1.1.1142033421.1771166039"
+  },
+  {
+    "domain": "www.midasbuy.com",
+    "expiry": 1802702037,
+    "httpOnly": false,
+    "name": "cookie_control",
+    "path": "/",
+    "sameSite": "None",
+    "secure": true,
+    "value": "1|1|1"
+  },
+  {
+    "domain": "www.midasbuy.com",
+    "expiry": 1771167885,
+    "httpOnly": true,
+    "name": "session_id",
+    "path": "/",
+    "sameSite": "None",
+    "secure": true,
+    "value": "d68tj1c76pmbat4hsss0___U24je94a106nw1"
+  },
+  {
+    "domain": ".midasbuy.com",
+    "expiry": 1805725980,
+    "httpOnly": false,
+    "name": "forterToken",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "3efa4b88f31a444dbe7fcb46cfaa5fbc_1771165969774__UDF43-mnts-ants-dnts-nnts_27ck_"
+  },
+  {
+    "domain": "www.midasbuy.com",
+    "expiry": 1802702037,
+    "httpOnly": false,
+    "name": "select_cookie",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "1"
+  },
+  {
+    "domain": "www.midasbuy.com",
+    "expiry": 1802701966,
+    "httpOnly": false,
+    "name": "tencent_tdrc",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "SCH4uc6pw8JhOubGr11eo6vGT4cukjNUdz"
+  },
+  {
+    "domain": "www.midasbuy.com",
+    "httpOnly": true,
+    "name": "platform_temp_token",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": true,
+    "value": ""
+  },
+  {
+    "domain": "www.midasbuy.com",
+    "httpOnly": false,
+    "name": "shopcode",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "midasbuy"
+  },
+  {
+    "domain": "www.midasbuy.com",
+    "expiry": 1802702092,
+    "httpOnly": false,
+    "name": "midasbuyDeviceId",
+    "path": "/",
+    "sameSite": "None",
+    "secure": true,
+    "value": "081487055089208021771165964414"
+  },
+  {
+    "domain": "www.midasbuy.com",
+    "expiry": 1771770885,
+    "httpOnly": true,
+    "name": "session_token",
+    "path": "/",
+    "sameSite": "None",
+    "secure": true,
+    "value": "96a0dc91f9f0929453e4243fff155fe455d1ada5d944deb0830870e48d6f4864"
+  },
+  {
+    "domain": "www.midasbuy.com",
+    "httpOnly": false,
+    "name": "UUID",
+    "path": "/",
+    "sameSite": "None",
+    "secure": true,
+    "value": "05025823087509964177116596441919999"
+  }
+]

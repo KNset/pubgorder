@@ -8,7 +8,9 @@ import db  # Import database module
 import json
 
 # --- [၁] Configuration ---
-API_TOKEN = '8591995558:AAH-_Fb-iCJ-ANeEiD8oqr0Qts3JlW8qStA'
+#API_TOKEN = '8591995558:AAH-_Fb-iCJ-ANeEiD8oqr0Qts3JlW8qStA' #production
+API_TOKEN = '8382899337:AAHEOI6vK66CRfEUIggku5GE_GlbKCMQjEs'
+
 ADMIN_ID = 1278018722 # Main Owner
 bot = telebot.TeleBot(API_TOKEN, num_threads=40)
 
