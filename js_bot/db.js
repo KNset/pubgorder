@@ -534,6 +534,15 @@ async function get_stock_codes(package_id) {
     }
 }
 
+async function clear_stock(package_id) {
+    try {
+        await query("DELETE FROM stocks WHERE package_id = $1", [package_id]);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
 // Export functions
 module.exports = {
     init_db,
@@ -544,7 +553,8 @@ module.exports = {
     get_game_packages,
     get_game_package_by_id,
     get_stock_count,
-    get_stock_codes, // Added this
+    get_stock_codes,
+    clear_stock, // Added this
     get_and_use_stock,
     add_stock,
     add_history,

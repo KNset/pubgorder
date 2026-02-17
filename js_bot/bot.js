@@ -732,12 +732,42 @@ bot.on('callback_query', async (query) => {
         } else {
             for (const p of packages) {
                 const cnt = await db.get_stock_count(String(p.id));
-                inline_keyboard.push([{ text: `🔹 ${p.name}: ${cnt}`, callback_data: `adm_view_codes_${p.id}` }]);
+                inline_keyboard.push([
+                    { text: `🔹 ${p.name}: ${cnt}`, callback_data: `adm_view_codes_${p.id}` },
+                    { text: "🗑 Clear", callback_data: `adm_clear_stk_${p.id}` }
+                ]);
             }
         }
         
         inline_keyboard.push([{ text: "🔙 Back", callback_data: "admin_check_stock" }]);
-        bot.editMessageText(`📦 **Game Stock**\nClick package to view codes:`, { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
+        bot.editMessageText(`📦 **Game Stock**\nClick package to view codes, or 🗑 to clear all stock:`, { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
+    }
+    
+    else if (data.startsWith('adm_clear_stk_')) {
+        const pid = data.split('_')[3];
+        // Confirm
+        const inline_keyboard = [
+            [{ text: "✅ Yes, Clear All", callback_data: `adm_confirm_clear_${pid}` }],
+            [{ text: "❌ Cancel", callback_data: "admin_check_stock" }]
+        ];
+        bot.editMessageText(`⚠️ **Are you sure?**\n\nThis will delete ALL redeem codes for this package ID: ${pid}.\nThis action cannot be undone.`, { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
+    }
+
+    else if (data.startsWith('adm_confirm_clear_')) {
+        const pid = data.split('_')[3];
+        await db.clear_stock(pid);
+        bot.answerCallbackQuery(query.id, { text: "✅ Stock Cleared" });
+        bot.sendMessage(chatId, `✅ All stock for Package ${pid} has been cleared.`);
+        // Go back to stock list? Need game id... simplified just go back to main stock menu
+        // Or just let user click back.
+        // Let's redirect to check stock main.
+        const games = await db.get_games();
+        const inline_keyboard = [];
+        games.forEach(g => {
+            inline_keyboard.push([{ text: `🎮 ${g.name}`, callback_data: `adm_chk_stk_g_${g.id}` }]);
+        });
+        inline_keyboard.push([{ text: "🔙 Back", callback_data: "admin_back_main" }]);
+        bot.editMessageText("📊 **Select Game to Check Stock:**", { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
     }
     
     else if (data.startsWith('adm_view_codes_')) {
@@ -885,19 +915,7 @@ bot.on('callback_query', async (query) => {
                 const [name, priceStr] = text.split('-').map(s => s.trim());
                 const price = parseInt(priceStr);
                 if (name && price) {
-                     await db.query("INSERT INTO game_packages (game_id, name, price) VALUES ($1, $2, $3)", [gid, name, price]);
-                     // Force refresh cache for this game
-                     await db.get_game_packages(gid); // This might return cached, we need to invalidate
-                     // Actually db.add_game_package handles cache invalidation.
-                     // But here I used raw query. I should use db.add_game_package helper.
-                     // Or manually delete cache.
-                     // db._USER_CACHE.delete(`packages_${gid}`); // Not accessible directly
-                     
-                     // Let's use the helper!
-                     // Wait, I don't have access to db helper if I don't export it? 
-                     // db.js exports add_game_package.
-                     
-                     // Re-implement correctly:
+                     // Use the helper to add package (handles cache clearing)
                      await db.add_game_package(gid, name, price);
                      
                      bot.sendMessage(chatId, `✅ Package Added: ${name}\nGo back to see it and get the ID.`);
