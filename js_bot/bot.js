@@ -404,18 +404,22 @@ bot.on('callback_query', async (query) => {
         const userId = query.from.id;
         const user = await db.get_user(userId);
         
-        if (user.balance < pkg.price) {
-            return bot.answerCallbackQuery(query.id, { text: "❌ Insufficient Balance", show_alert: true });
+        // Ensure numbers
+        const balance = Number(user.balance);
+        const price = Number(pkg.price);
+        
+        if (balance < price) {
+            return bot.answerCallbackQuery(query.id, { text: `❌ Insufficient Balance\nYour Balance: ${balance}\nPrice: ${price}`, show_alert: true });
         }
         
-        const balBefore = user.balance;
+        const balBefore = balance;
         
         // Try Auto Delivery (Stock)
         // Use pid as string
         const code = await db.get_and_use_stock(String(pid));
         if (code) {
-            await db.update_balance(userId, -pkg.price);
-            const balAfter = balBefore - pkg.price;
+            await db.update_balance(userId, -price);
+            const balAfter = balBefore - price;
             
             await db.add_history(userId, `${pkg.game_name} - ${pkg.name}`, code);
             
@@ -434,8 +438,8 @@ bot.on('callback_query', async (query) => {
         }
         
         // Manual Order Flow (If no stock)
-        await db.update_balance(userId, -pkg.price);
-        const balAfter = balBefore - pkg.price;
+        await db.update_balance(userId, -price);
+        const balAfter = balBefore - price;
         
         // Ask for ID
         bot.sendMessage(chatId, `🆔 **Enter Player ID / Details for ${pkg.game_name}:**`, { reply_markup: { force_reply: true } })
@@ -452,7 +456,7 @@ bot.on('callback_query', async (query) => {
                    const adminMarkup = {
                        inline_keyboard: [
                            [{ text: "✅ Done", callback_data: `man_done_${userId}` }],
-                           [{ text: "❌ Refund", callback_data: `man_ref_${userId}_${pkg.price}` }]
+                           [{ text: "❌ Refund", callback_data: `man_ref_${userId}_${price}` }]
                        ]
                    };
                    
@@ -517,19 +521,24 @@ bot.on('callback_query', async (query) => {
         if (!pack) return bot.answerCallbackQuery(query.id, { text: "❌ Invalid Package" });
         
         const user = await db.get_user(userId);
-        if (user.balance < pack.price) {
-            return bot.answerCallbackQuery(query.id, { text: "❌ လက်ကျန်ငွေ မလုံလောက်ပါ။", show_alert: true });
+        
+        // Ensure numbers
+        const balance = Number(user.balance);
+        const price = Number(pack.price);
+        
+        if (balance < price) {
+            return bot.answerCallbackQuery(query.id, { text: `❌ Insufficient Balance\nYour Balance: ${balance}\nPrice: ${price}`, show_alert: true });
         }
         
-        const balBefore = user.balance;
+        const balBefore = balance;
         
         const code = await db.get_and_use_stock(pk);
         if (!code) {
             return bot.answerCallbackQuery(query.id, { text: "⚠️ Stock ပြတ်နေပါသည်။", show_alert: true });
         }
         
-        await db.update_balance(userId, -pack.price);
-        const balAfter = balBefore - pack.price;
+        await db.update_balance(userId, -price);
+        const balAfter = balBefore - price;
         
         await db.add_history(userId, pack.name, code);
         
