@@ -318,17 +318,20 @@ bot.on('callback_query', async (query) => {
 // Games Menu
 bot.onText(/🛒 Games/, async (msg) => {
     const games = await db.get_games();
-    const inline_keyboard = [
-        [{ text: "🎮 PUBG UC (Auto)", callback_data: "game_pubg" }]
-    ];
+    const inline_keyboard = [];
     
     games.forEach(g => {
+        // Only show games from the new 'games' table
         if (g.name !== 'PUBG UC') {
             inline_keyboard.push([{ text: `🎮 ${g.name}`, callback_data: `game_id_${g.id}` }]);
         }
     });
     
-    bot.sendMessage(msg.chat.id, "🛒 **Select Game:**", { reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
+    if (inline_keyboard.length === 0) {
+        bot.sendMessage(msg.chat.id, "🛒 **No games available.**", { parse_mode: 'Markdown' });
+    } else {
+        bot.sendMessage(msg.chat.id, "🛒 **Select Game:**", { reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
+    }
 });
 
 // Game Selection Handler
@@ -772,114 +775,12 @@ bot.on('callback_query', async (query) => {
     else if (data === 'admin_back_main') {
         const inline_keyboard = [
             [{ text: "📊 Check Stock", callback_data: "admin_check_stock" }],
-            [{ text: "📦 Manage Packages", callback_data: "admin_manage_packages" }],
             [{ text: "🎮 Manage Games", callback_data: "admin_manage_games" }],
-            [{ text: "➕ Add New Package", callback_data: "admin_add_package" }],
             [{ text: "💳 Manage Payments", callback_data: "admin_manage_payments" }],
             [{ text: "👥 Manage Users", callback_data: "admin_manage_users" }],
             [{ text: "❌ Close", callback_data: "admin_close" }]
         ];
         bot.editMessageText("🔧 **Admin Dashboard**", { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
-    }
-    else if (data === 'admin_manage_packages') {
-        const packages = await db.get_packages();
-        const inline_keyboard = [];
-        Object.keys(packages).forEach(k => {
-            const p = packages[k];
-            inline_keyboard.push([{ text: `${p.name} (${p.price} MMK)`, callback_data: `adm_pkg_${k}` }]);
-        });
-        inline_keyboard.push([{ text: "➕ Add New Package", callback_data: "admin_add_package" }]);
-        inline_keyboard.push([{ text: "🔙 Back", callback_data: "admin_back_main" }]);
-        
-        bot.editMessageText("📦 **Select Package to Edit/Delete:**", { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
-    }
-    
-    else if (data.startsWith('adm_pkg_')) {
-        const pk = data.split('_')[2];
-        const packages = await db.get_packages();
-        const pack = packages[pk];
-        
-        if (!pack) return bot.answerCallbackQuery(query.id, { text: "❌ Package Not Found" });
-        
-        const stockCount = await db.get_stock_count(pk);
-        const inline_keyboard = [
-            [{ text: "✏️ Edit Price", callback_data: `adm_edit_price_${pk}` }],
-            [{ text: "➕ Add Stock", callback_data: `adm_add_stock_${pk}` }],
-            [{ text: "🗑 Delete", callback_data: `adm_del_pkg_${pk}` }],
-            [{ text: "🔙 Back", callback_data: "admin_manage_packages" }]
-        ];
-        
-        const text = `📦 **Package Details**\n\n🆔 ID: ${pk}\n📛 Name: ${pack.name}\n💵 Price: ${pack.price} MMK\n📊 Stock: ${stockCount}`;
-        
-        try {
-            await bot.editMessageText(text, { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
-        } catch(e) {
-            await bot.editMessageText(text.replace(/\*/g, ''), { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard } });
-        }
-    }
-    
-    else if (data === 'admin_add_package') {
-        const promptMsg = await bot.sendMessage(chatId, "➕ **Enter New Package Identifier (e.g., 60, 325):**", { reply_markup: { force_reply: true } });
-        
-        bot.onReplyToMessage(chatId, promptMsg.message_id, async (reply1) => {
-            const pid = reply1.text.trim();
-            const prompt2 = await bot.sendMessage(chatId, `📛 **Enter Name for ${pid} (e.g., 60 UC):**`, { reply_markup: { force_reply: true } });
-            
-            bot.onReplyToMessage(chatId, prompt2.message_id, async (reply2) => {
-                const name = reply2.text.trim();
-                const prompt3 = await bot.sendMessage(chatId, `💵 **Enter Price for ${name}:**`, { reply_markup: { force_reply: true } });
-                
-                bot.onReplyToMessage(chatId, prompt3.message_id, async (reply3) => {
-                    const price = parseInt(reply3.text.trim());
-                    if (!isNaN(price)) {
-                        try {
-                            await db.query("INSERT INTO packages (identifier, name, price) VALUES ($1, $2, $3)", [pid, name, price]);
-                            bot.sendMessage(chatId, `✅ **Package Added!**\n${name} - ${price} MMK`);
-                        } catch (e) {
-                            bot.sendMessage(chatId, "❌ Failed. Identifier might exist.");
-                        }
-                    } else {
-                        bot.sendMessage(chatId, "❌ Invalid Price.");
-                    }
-                });
-            });
-        });
-    }
-
-    else if (data.startsWith('adm_edit_price_')) {
-        const pk = data.split('_')[3];
-        const promptMsg = await bot.sendMessage(chatId, `💵 **Enter New Price for Package ${pk}:**`, { reply_markup: { force_reply: true } });
-        
-        bot.onReplyToMessage(chatId, promptMsg.message_id, async (reply) => {
-            const price = parseInt(reply.text.trim());
-            if (!isNaN(price)) {
-                await db.query("UPDATE packages SET price = $1 WHERE identifier = $2", [price, pk]);
-                bot.sendMessage(chatId, `✅ **Price Updated!**`);
-            } else {
-                bot.sendMessage(chatId, "❌ Invalid Price.");
-            }
-        });
-    }
-
-    else if (data.startsWith('adm_del_pkg_')) {
-        const pk = data.split('_')[3];
-        await db.query("DELETE FROM packages WHERE identifier = $1", [pk]);
-        bot.answerCallbackQuery(query.id, { text: "✅ Package Deleted" });
-        bot.sendMessage(chatId, "✅ Package Deleted. Refresh menu.");
-    }
-    
-    else if (data.startsWith('adm_add_stock_')) {
-        const pk = data.split('_')[3];
-        const promptMsg = await bot.sendMessage(chatId, `📦 **Enter Codes for Package ${pk}**\n(Separate by space or new line)`, { reply_markup: { force_reply: true } });
-        
-        bot.onReplyToMessage(chatId, promptMsg.message_id, async (reply) => {
-            const codes = reply.text.trim().split(/\s+/);
-            let count = 0;
-            for (const code of codes) {
-                if (await db.add_stock(pk, code)) count++;
-            }
-            bot.sendMessage(chatId, `✅ Added ${count} codes to Package ${pk}.`);
-        });
     }
 
     else if (data === 'admin_manage_games') {
@@ -985,7 +886,21 @@ bot.on('callback_query', async (query) => {
                 const price = parseInt(priceStr);
                 if (name && price) {
                      await db.query("INSERT INTO game_packages (game_id, name, price) VALUES ($1, $2, $3)", [gid, name, price]);
-                     bot.sendMessage(chatId, `✅ Package Added: ${name}`);
+                     // Force refresh cache for this game
+                     await db.get_game_packages(gid); // This might return cached, we need to invalidate
+                     // Actually db.add_game_package handles cache invalidation.
+                     // But here I used raw query. I should use db.add_game_package helper.
+                     // Or manually delete cache.
+                     // db._USER_CACHE.delete(`packages_${gid}`); // Not accessible directly
+                     
+                     // Let's use the helper!
+                     // Wait, I don't have access to db helper if I don't export it? 
+                     // db.js exports add_game_package.
+                     
+                     // Re-implement correctly:
+                     await db.add_game_package(gid, name, price);
+                     
+                     bot.sendMessage(chatId, `✅ Package Added: ${name}\nGo back to see it and get the ID.`);
                 } else {
                     bot.sendMessage(chatId, "❌ Invalid Format.");
                 }
