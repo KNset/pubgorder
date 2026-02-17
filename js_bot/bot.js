@@ -756,7 +756,8 @@ bot.on('callback_query', async (query) => {
     
     else if (data.startsWith('adm_conf_del_gm_')) {
         const gid = data.split('_')[4];
-        await db.query("DELETE FROM games WHERE id = $1", [gid]);
+        // Use helper to ensure cache is cleared
+        await db.delete_game(gid);
         bot.answerCallbackQuery(query.id, { text: "✅ Game Deleted" });
         
         // Go back to main stock list
