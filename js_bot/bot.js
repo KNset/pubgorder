@@ -31,6 +31,102 @@ async function isAdmin(userId) {
     return await db.is_admin(userId);
 }
 
+// --- Admin Management Commands ---
+bot.onText(/\/addadmin (.+)/, async (msg, match) => {
+    if (String(msg.from.id) !== ADMIN_ID) return; // Only Main Owner
+    const targetId = match[1].trim();
+    if (await db.add_admin(targetId)) {
+        bot.sendMessage(msg.chat.id, `✅ User ${targetId} is now an Admin!`);
+    } else {
+        bot.sendMessage(msg.chat.id, "⚠️ User is already an Admin or Error.");
+    }
+});
+
+bot.onText(/\/deladmin (.+)/, async (msg, match) => {
+    if (String(msg.from.id) !== ADMIN_ID) return;
+    const targetId = match[1].trim();
+    if (await db.remove_admin(targetId)) {
+        bot.sendMessage(msg.chat.id, `✅ User ${targetId} removed from Admins.`);
+    } else {
+        bot.sendMessage(msg.chat.id, "⚠️ User not found or Error.");
+    }
+});
+
+bot.onText(/\/admins/, async (msg) => {
+    if (String(msg.from.id) !== ADMIN_ID) return;
+    const admins = await db.get_all_admins();
+    let text = `👑 **Main Owner:** \`${ADMIN_ID}\`\n\n👮 **Admins:**\n`;
+    admins.forEach(a => text += `- \`${a}\`\n`);
+    bot.sendMessage(msg.chat.id, text, { parse_mode: 'Markdown' });
+});
+
+// --- Midasbuy Cookies (Advanced) ---
+bot.onText(/\/setcookies/, async (msg) => {
+    if (!(await isAdmin(msg.from.id))) return;
+    
+    // Check for file upload suggestion
+    if (msg.text.length > 3000) {
+        return bot.sendMessage(msg.chat.id, "⚠️ Text too long. Please upload as `.json` file.");
+    }
+
+    const jsonStr = msg.text.replace('/setcookies', '').trim();
+    if (!jsonStr) return bot.sendMessage(msg.chat.id, "⚠️ Paste cookie JSON or upload file.");
+
+    try {
+        let cookies;
+        // Simple heuristic parsing
+        let cleaned = jsonStr.replace(/[\u201C\u201D\u2018\u2019]/g, '"'); // Fix smart quotes
+        
+        // Try to parse
+        try {
+            cookies = JSON.parse(cleaned);
+        } catch (e) {
+            // Try wrapping in [] if it looks like a list of objects but missing brackets
+            if (cleaned.includes('},{') && !cleaned.startsWith('[')) {
+                cookies = JSON.parse(`[${cleaned}]`);
+            } else {
+                throw e;
+            }
+        }
+
+        if (!Array.isArray(cookies)) {
+             // Handle single object
+             if (typeof cookies === 'object' && cookies !== null) {
+                 cookies = [cookies];
+             } else {
+                 throw new Error("Not a JSON array or object");
+             }
+        }
+        
+        await db.set_api_config('midasbuy', { cookies });
+        bot.sendMessage(msg.chat.id, `✅ Cookies updated! (${cookies.length} count)`);
+    } catch (e) {
+        bot.sendMessage(msg.chat.id, `❌ Error parsing JSON: ${e.message}`);
+    }
+});
+
+bot.on('document', async (msg) => {
+    if (!(await isAdmin(msg.from.id))) return;
+    
+    if (msg.document.file_name.endsWith('.json') || (msg.caption && msg.caption.includes('/setcookies'))) {
+        try {
+            const fileLink = await bot.getFileLink(msg.document.file_id);
+            const response = await fetch(fileLink);
+            const content = await response.text();
+            
+            const cookies = JSON.parse(content);
+            if (Array.isArray(cookies)) {
+                await db.set_api_config('midasbuy', { cookies });
+                bot.sendMessage(msg.chat.id, `✅ Cookies loaded from file! (${cookies.length} count)`);
+            } else {
+                bot.sendMessage(msg.chat.id, "❌ File must contain a JSON array.");
+            }
+        } catch (e) {
+            bot.sendMessage(msg.chat.id, `❌ File Error: ${e.message}`);
+        }
+    }
+});
+
 // Menus
 const MAIN_MENU = {
     reply_markup: {
@@ -479,22 +575,82 @@ bot.on('callback_query', async (query) => {
 });
 
 // Admin Commands
-bot.onText(/\/add (.+)/, async (msg, match) => {
-    const userId = msg.from.id;
-    if (!(await isAdmin(userId))) return;
+bot.onText(/\/checkstock/, async (msg) => {
+    if (!(await isAdmin(msg.from.id))) return;
     
-    const args = match[1].split(' ');
+    let report = "📦 **Stock Report**\n\n";
+    
+    // Legacy
+    const packages = await db.get_packages();
+    if (Object.keys(packages).length > 0) {
+        report += "**PUBG UC (Legacy):**\n";
+        for (const k of Object.keys(packages)) {
+            const cnt = await db.get_stock_count(k);
+            report += `🔹 ${packages[k].name}: **${cnt}**\n`;
+        }
+        report += "\n";
+    }
+    
+    // New Games
+    const games = await db.get_games();
+    for (const g of games) {
+        const gps = await db.get_game_packages(g.id);
+        if (gps.length > 0) {
+            report += `**${g.name}:**\n`;
+            for (const p of gps) {
+                const cnt = await db.get_stock_count(String(p.id));
+                report += `🔹 ${p.name}: **${cnt}**\n`;
+            }
+            report += "\n";
+        }
+    }
+    
+    bot.sendMessage(msg.chat.id, report || "No stock found.", { parse_mode: 'Markdown' });
+});
+
+bot.onText(/\/add (.+)/, async (msg, match) => {
+    if (!(await isAdmin(msg.from.id))) return;
+    
+    // Split by spaces, but respect lines if pasted
+    const input = match[1];
+    const args = input.trim().split(/\s+/);
+    
+    if (args.length < 2) return bot.sendMessage(msg.chat.id, "⚠️ Usage: `/add [Pack_ID] [Code1] [Code2] ...`\nExample: `/add 60 CODE1 CODE2` or `/add 5 CODE1`");
+    
     const packId = args[0];
     const codes = args.slice(1);
     
-    if (codes.length === 0) return bot.sendMessage(msg.chat.id, "⚠️ Usage: `/add [Pack_ID] [Code1] ...`");
+    // Verify Package Exists (Legacy OR New)
+    let packName = null;
     
-    let count = 0;
-    for (const code of codes) {
-        if (await db.add_stock(packId, code)) count++;
+    // Check Legacy
+    const legacyPkgs = await db.get_packages();
+    if (legacyPkgs[packId]) {
+        packName = legacyPkgs[packId].name;
+    } else {
+        // Check New Game Package
+        const newPkg = await db.get_game_package_by_id(packId);
+        if (newPkg) {
+            packName = `${newPkg.game_name} - ${newPkg.name}`;
+        }
     }
     
-    bot.sendMessage(msg.chat.id, `✅ Added ${count} codes to Package ${packId}.`);
+    if (!packName) {
+        return bot.sendMessage(msg.chat.id, `❌ Package ID \`${packId}\` not found.\nUse \`/admin\` -> 'Manage Games' or 'Manage Packages' to find IDs.`);
+    }
+    
+    let count = 0;
+    let duplicates = 0;
+    
+    for (const code of codes) {
+        if (await db.add_stock(packId, code)) {
+            count++;
+        } else {
+            duplicates++;
+        }
+    }
+    
+    bot.sendMessage(msg.chat.id, `📦 **Stock Added**\n📂 Package: **${packName}**\n✅ Added: ${count}\n⚠️ Duplicates: ${duplicates}`, { parse_mode: 'Markdown' });
 });
 
 // Admin Dashboard
@@ -836,25 +992,28 @@ bot.on('callback_query', async (query) => {
 
     // Manage Users
     else if (data === 'admin_manage_users') {
-        const res = await db.query("SELECT COUNT(*) FROM users");
-        const count = res.rows[0].count;
-        
-        // Fetch recent users (limit 10)
-        const recentRes = await db.query("SELECT * FROM users ORDER BY joined_at DESC LIMIT 10");
-        const users = recentRes.rows;
-        
-        const inline_keyboard = [];
-        
-        users.forEach(u => {
-            const display = u.username ? `@${u.username}` : u.user_id;
-            inline_keyboard.push([{ text: `👤 ${display} | 💰 ${u.balance}`, callback_data: `adm_user_dtl_${u.user_id}` }]);
+        showUserList(chatId, msgId, 0);
+    }
+    
+    else if (data.startsWith('adm_u_pg_')) {
+        const page = parseInt(data.split('_')[3]);
+        showUserList(chatId, msgId, page);
+    }
+    
+    else if (data === 'admin_add_user_manual') {
+        const promptMsg = await bot.sendMessage(chatId, "➕ **Enter User ID to Add Manually:**", { reply_markup: { force_reply: true } });
+        bot.onReplyToMessage(chatId, promptMsg.message_id, async (reply) => {
+            const uid = reply.text.trim();
+            if (/^\d+$/.test(uid)) {
+                if (await db.add_user(uid)) {
+                    bot.sendMessage(chatId, `✅ **User ${uid} Added!**`);
+                } else {
+                    bot.sendMessage(chatId, `⚠️ **User ${uid} already exists.**`);
+                }
+            } else {
+                bot.sendMessage(chatId, "❌ Invalid ID.");
+            }
         });
-        
-        inline_keyboard.push([{ text: "🔍 Find User", callback_data: "admin_find_user" }]);
-        inline_keyboard.push([{ text: "➕ Add Balance", callback_data: "admin_add_bal_prompt" }]);
-        inline_keyboard.push([{ text: "🔙 Back", callback_data: "admin_back_main" }]);
-        
-        bot.editMessageText(`👥 **User Management**\n\n📊 Total Users: **${count}**\n👇 **Recent Users:**`, { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
     }
     
     else if (data.startsWith('adm_user_dtl_')) {
@@ -1017,21 +1176,38 @@ bot.onText(/\/broadcast (.+)/, async (msg, match) => {
     if (!(await isAdmin(msg.from.id))) return;
     
     const text = match[1];
+    startBroadcast(msg, text, null);
+});
+
+bot.on('photo', async (msg) => {
+    if (!(await isAdmin(msg.from.id))) return;
+    if (msg.caption && msg.caption.startsWith('/broadcast')) {
+        const text = msg.caption.replace('/broadcast', '').trim();
+        const photoId = msg.photo[msg.photo.length - 1].file_id;
+        startBroadcast(msg, text || "📢 Announcement", photoId);
+    }
+});
+
+async function startBroadcast(msg, text, photoId) {
     const statusMsg = await bot.sendMessage(msg.chat.id, "⏳ Broadcasting...");
     
-    // Get all users (Need to implement get_all_users in db.js or query directly)
+    // Get all users
     try {
         const res = await db.query("SELECT user_id FROM users");
         const users = res.rows;
         let count = 0;
         let blocked = 0;
         
+        // Use a loop with delay
         for (const u of users) {
             try {
-                await bot.sendMessage(u.user_id, text, { parse_mode: 'Markdown' });
+                if (photoId) {
+                    await bot.sendPhoto(u.user_id, photoId, { caption: text, parse_mode: 'Markdown' });
+                } else {
+                    await bot.sendMessage(u.user_id, text, { parse_mode: 'Markdown' });
+                }
                 count++;
-                // Add small delay to avoid rate limits
-                await new Promise(r => setTimeout(r, 30)); 
+                await new Promise(r => setTimeout(r, 50)); // 50ms delay
             } catch (e) {
                 blocked++;
             }
@@ -1041,6 +1217,39 @@ bot.onText(/\/broadcast (.+)/, async (msg, match) => {
     } catch (e) {
         bot.sendMessage(msg.chat.id, `❌ Error: ${e.message}`);
     }
-});
+}
+
+async function showUserList(chatId, msgId, page) {
+    const limit = 10;
+    const offset = page * limit;
+    const users = await db.get_all_users(limit, offset);
+    const totalUsers = await db.get_total_users_count();
+    
+    const inline_keyboard = [];
+    
+    users.forEach(u => {
+        const display = u.username ? `@${u.username}` : u.user_id;
+        // Clean display for button text (buttons don't support markdown but might have length limits)
+        inline_keyboard.push([{ text: `👤 ${display} | 💰 ${u.balance}`, callback_data: `adm_user_dtl_${u.user_id}` }]);
+    });
+    
+    // Pagination Controls
+    const navRow = [];
+    if (page > 0) {
+        navRow.push({ text: "⬅️ Prev", callback_data: `adm_u_pg_${page - 1}` });
+    }
+    if (offset + limit < totalUsers) {
+        navRow.push({ text: "Next ➡️", callback_data: `adm_u_pg_${page + 1}` });
+    }
+    if (navRow.length > 0) inline_keyboard.push(navRow);
+    
+    inline_keyboard.push([{ text: "🔍 Find User", callback_data: "admin_find_user" }]);
+    inline_keyboard.push([{ text: "➕ Add User Manually", callback_data: "admin_add_user_manual" }]);
+    inline_keyboard.push([{ text: "🔙 Back", callback_data: "admin_back_main" }]);
+    
+    const text = `👥 **User Management**\n\n📊 Total Users: **${totalUsers}**\n📄 Page: ${page + 1}`;
+    
+    bot.editMessageText(text, { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
+}
 
 console.log("Bot setup complete.");

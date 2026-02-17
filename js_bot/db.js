@@ -114,6 +114,14 @@ async function init_db() {
             );
         `);
 
+        // API Config Table (For Cookies etc)
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS api_config (
+                service_name TEXT PRIMARY KEY,
+                config JSONB
+            );
+        `);
+
         // Ensure PUBG exists
         await client.query("INSERT INTO games (name) VALUES ('PUBG UC') ON CONFLICT (name) DO NOTHING");
 
@@ -307,9 +315,29 @@ async function is_admin(user_id) {
 async function get_all_admins() {
     try {
         const res = await query("SELECT user_id FROM admins");
-        return res.rows.map(r => r.user_id); // Returns string because BIGINT is string in JS
+        return res.rows.map(r => r.user_id); 
     } catch (e) {
         return [];
+    }
+}
+
+async function add_admin(user_id) {
+    try {
+        await query("INSERT INTO admins (user_id) VALUES ($1) ON CONFLICT DO NOTHING", [user_id]);
+        _USER_CACHE.delete(`admin_${user_id}`);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function remove_admin(user_id) {
+    try {
+        await query("DELETE FROM admins WHERE user_id = $1", [user_id]);
+        _USER_CACHE.delete(`admin_${user_id}`);
+        return true;
+    } catch (e) {
+        return false;
     }
 }
 
@@ -319,6 +347,158 @@ async function get_payment_methods() {
         return res.rows;
     } catch (e) {
         return [];
+    }
+}
+
+async function add_payment_method(name, acc, owner, qr_id) {
+    try {
+        await query("INSERT INTO payment_methods (name, account_number, account_name, qr_photo_id) VALUES ($1, $2, $3, $4)", [name, acc, owner, qr_id]);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function delete_payment_method(id) {
+    try {
+        await query("DELETE FROM payment_methods WHERE id = $1", [id]);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+// User Management Helpers
+async function get_all_users(limit = 10, offset = 0) {
+    try {
+        const res = await query("SELECT * FROM users ORDER BY joined_at DESC LIMIT $1 OFFSET $2", [limit, offset]);
+        return res.rows;
+    } catch (e) {
+        return [];
+    }
+}
+
+async function get_total_users_count() {
+    try {
+        const res = await query("SELECT COUNT(*) FROM users");
+        return parseInt(res.rows[0].count);
+    } catch (e) {
+        return 0;
+    }
+}
+
+async function update_user_username(user_id, username) {
+    try {
+        await query("UPDATE users SET username = $1 WHERE user_id = $2", [username, user_id]);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function add_user(user_id) {
+    try {
+        await query("INSERT INTO users (user_id, balance) VALUES ($1, 0) ON CONFLICT DO NOTHING", [user_id]);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+// API Config (Cookies)
+async function set_api_config(service, config) {
+    try {
+        await query("INSERT INTO api_config (service_name, config) VALUES ($1, $2) ON CONFLICT (service_name) DO UPDATE SET config = $2", [service, JSON.stringify(config)]);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function get_api_config(service) {
+    try {
+        const res = await query("SELECT config FROM api_config WHERE service_name = $1", [service]);
+        return res.rows[0] ? res.rows[0].config : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+// Game Management Helpers
+async function add_game(name) {
+    try {
+        await query("INSERT INTO games (name) VALUES ($1)", [name]);
+        _USER_CACHE.delete('games_list');
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function delete_game(id) {
+    try {
+        await query("DELETE FROM games WHERE id = $1", [id]);
+        _USER_CACHE.delete('games_list');
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function add_game_package(game_id, name, price) {
+    try {
+        await query("INSERT INTO game_packages (game_id, name, price) VALUES ($1, $2, $3)", [game_id, name, price]);
+        _USER_CACHE.delete(`packages_${game_id}`);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function delete_game_package(id) {
+    try {
+        // Need game_id to clear cache, fetch first
+        const res = await query("SELECT game_id FROM game_packages WHERE id = $1", [id]);
+        if (res.rows.length > 0) {
+            const gid = res.rows[0].game_id;
+            await query("DELETE FROM game_packages WHERE id = $1", [id]);
+            _USER_CACHE.delete(`packages_${gid}`);
+            return true;
+        }
+        return false;
+    } catch (e) {
+        return false;
+    }
+}
+
+// Package Management Helpers (Legacy)
+async function add_package(identifier, name, price) {
+    try {
+        await query("INSERT INTO packages (identifier, name, price) VALUES ($1, $2, $3)", [identifier, name, price]);
+        _USER_CACHE.delete('legacy_packages');
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function update_package_price(identifier, price) {
+    try {
+        await query("UPDATE packages SET price = $1 WHERE identifier = $2", [price, identifier]);
+        _USER_CACHE.delete('legacy_packages');
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function delete_package(identifier) {
+    try {
+        await query("DELETE FROM packages WHERE identifier = $1", [identifier]);
+        _USER_CACHE.delete('legacy_packages');
+        return true;
+    } catch (e) {
+        return false;
     }
 }
 
@@ -345,7 +525,7 @@ module.exports = {
     get_packages,
     get_games,
     get_game_packages,
-    get_game_package_by_id, // Added this
+    get_game_package_by_id,
     get_stock_count,
     get_and_use_stock,
     add_stock,
@@ -353,7 +533,24 @@ module.exports = {
     get_history,
     is_admin,
     get_all_admins,
+    add_admin,
+    remove_admin,
     get_payment_methods,
+    add_payment_method,
+    delete_payment_method,
+    get_all_users,
+    get_total_users_count,
+    update_user_username,
+    add_user,
+    set_api_config,
+    get_api_config,
+    add_game,
+    delete_game,
+    add_game_package,
+    delete_game_package,
+    add_package,
+    update_package_price,
+    delete_package,
     query,
     pool
 };
