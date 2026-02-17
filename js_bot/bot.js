@@ -415,7 +415,7 @@ bot.on('callback_query', async (query) => {
             bot.editMessageText("✅ **Success! Check PM.**", { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' });
             
             // Notify Admins (Auto Sale)
-            const adminMsg = `🛒 **New Sale (Auto)**\n👤 User: ${query.from.username || userId}\n📦 Pack: ${pkg.game_name} - ${pkg.name}\n🎟 Code: \`${code}\`\n\n💰 Before: ${balBefore}\n💰 After: ${balAfter}`;
+            const adminMsg = `🛒 **New Sale (Auto)**\n👤 User:@ ${query.from.username || userId}\n📦 Pack: ${pkg.game_name} - ${pkg.name}\n🎟 Code: \`${code}\`\n\n💰 Before: ${balBefore}\n💰 After: ${balAfter}`;
             const admins = await db.get_all_admins();
             const allAdmins = new Set([...admins, ADMIN_ID]);
             allAdmins.forEach(aid => {
@@ -444,7 +444,7 @@ bot.on('callback_query', async (query) => {
                    bot.sendMessage(chatId, "✅ **Order Received!**\nAdmin will process it shortly.");
                    
                    // Notify Admin
-                   const adminMsg = `🛒 **New Manual Order**\n👤 User: ${userId}\n🎮 Game: ${pkg.game_name}\n📦 Pack: ${pkg.name}\n📝 Details: \`${details}\`\n💰 Paid: ${pkg.price}\n\n💰 Before: ${balBefore}\n💰 After: ${balAfter}`;
+                   const adminMsg = `🛒 **New Manual Order**\n👤 User: @${username}\n🎮 Game: ${pkg.game_name}\n📦 Pack: ${pkg.name}\n📝 Details: \`${details}\`\n💰 Paid: ${pkg.price}\n\n💰 Before: ${balBefore}\n💰 After: ${balAfter}`;
                    const adminMarkup = {
                        inline_keyboard: [
                            [{ text: "✅ Done", callback_data: `man_done_${userId}` }],
