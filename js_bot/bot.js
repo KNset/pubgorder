@@ -340,19 +340,7 @@ bot.on('callback_query', async (query) => {
     const chatId = query.message.chat.id;
     const msgId = query.message.message_id;
     
-    if (data === 'game_pubg') {
-        const packages = await db.get_packages();
-        const inline_keyboard = [];
-        
-        Object.keys(packages).forEach(k => {
-            const p = packages[k];
-            inline_keyboard.push([{ text: `🎮 ${p.name} - ${p.price} MMK`, callback_data: `pre_${k}` }]);
-        });
-        inline_keyboard.push([{ text: "🔙 Back", callback_data: "back_to_games" }]);
-        
-        bot.editMessageText("👇 **PUBG UC Packages:**", { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
-    }
-    else if (data.startsWith('game_id_')) {
+    if (data.startsWith('game_id_')) {
         const gid = data.split('_')[2];
         const packages = await db.get_game_packages(gid);
         const inline_keyboard = [];
@@ -373,13 +361,7 @@ bot.on('callback_query', async (query) => {
         const pid = data.split('_')[2];
         const pkg = await db.get_game_package_by_id(pid);
         
-        // Debug
-        if (!pkg) {
-            console.log(`Package not found for ID: ${pid}`);
-            // Fallback: Check if it's a legacy package ID?
-            // No, buy_gp_ is strictly for game_packages table.
-            return bot.answerCallbackQuery(query.id, { text: "❌ Invalid Package ID" });
-        }
+        if (!pkg) return bot.answerCallbackQuery(query.id, { text: "❌ Invalid Package ID" });
         
         const text = `❓ **Confirm Purchase**\n\n🎮 Game: **${pkg.game_name}**\n📦 Pack: **${pkg.name}**\n💵 Price: **${pkg.price} MMK**`;
         const inline_keyboard = [
@@ -389,20 +371,11 @@ bot.on('callback_query', async (query) => {
         
         bot.editMessageText(text, { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
     }
-    // Confirm Purchase for Legacy
     else if (data.startsWith('confirm_gp_')) {
         const pid = data.split('_')[2];
-        let pkg = await db.get_game_package_by_id(pid);
+        const pkg = await db.get_game_package_by_id(pid);
         
-        // Handle Legacy Packages
-        if (!pkg) {
-             const legacyPkgs = await db.get_packages();
-             if (legacyPkgs[pid]) {
-                 pkg = { ...legacyPkgs[pid], game_name: 'PUBG UC (Legacy)', id: pid };
-             } else {
-                 return bot.answerCallbackQuery(query.id, { text: "❌ Invalid Package" });
-             }
-        }
+        if (!pkg) return bot.answerCallbackQuery(query.id, { text: "❌ Invalid Package" });
         
         const userId = query.from.id;
         const user = await db.get_user(userId);
