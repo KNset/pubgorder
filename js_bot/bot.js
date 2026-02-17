@@ -274,7 +274,13 @@ bot.on('callback_query', async (query) => {
         const pid = data.split('_')[2];
         const pkg = await db.get_game_package_by_id(pid);
         
-        if (!pkg) return bot.answerCallbackQuery(query.id, { text: "❌ Invalid Package" });
+        // Debug
+        if (!pkg) {
+            console.log(`Package not found for ID: ${pid}`);
+            // Fallback: Check if it's a legacy package ID?
+            // No, buy_gp_ is strictly for game_packages table.
+            return bot.answerCallbackQuery(query.id, { text: "❌ Invalid Package ID" });
+        }
         
         const text = `❓ **Confirm Purchase**\n\n🎮 Game: **${pkg.game_name}**\n📦 Pack: **${pkg.name}**\n💵 Price: **${pkg.price} MMK**`;
         const inline_keyboard = [
@@ -284,19 +290,30 @@ bot.on('callback_query', async (query) => {
         
         bot.editMessageText(text, { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
     }
+    // Confirm Purchase for Legacy
     else if (data.startsWith('confirm_gp_')) {
         const pid = data.split('_')[2];
-        const pkg = await db.get_game_package_by_id(pid);
+        let pkg = await db.get_game_package_by_id(pid);
+        
+        // Handle Legacy Packages
+        if (!pkg) {
+             const legacyPkgs = await db.get_packages();
+             if (legacyPkgs[pid]) {
+                 pkg = { ...legacyPkgs[pid], game_name: 'PUBG UC (Legacy)', id: pid };
+             } else {
+                 return bot.answerCallbackQuery(query.id, { text: "❌ Invalid Package" });
+             }
+        }
+        
         const userId = query.from.id;
-        
-        if (!pkg) return bot.answerCallbackQuery(query.id, { text: "❌ Invalid Package" });
-        
         const user = await db.get_user(userId);
+        
         if (user.balance < pkg.price) {
             return bot.answerCallbackQuery(query.id, { text: "❌ Insufficient Balance", show_alert: true });
         }
         
         // Try Auto Delivery (Stock)
+        // Use pid as string
         const code = await db.get_and_use_stock(String(pid));
         if (code) {
             await db.update_balance(userId, -pkg.price);
@@ -310,6 +327,7 @@ bot.on('callback_query', async (query) => {
         
         // Manual Order Flow (If no stock)
         await db.update_balance(userId, -pkg.price);
+        
         // Ask for ID
         bot.sendMessage(chatId, `🆔 **Enter Player ID / Details for ${pkg.game_name}:**`, { reply_markup: { force_reply: true } })
            .then(prompt => {
