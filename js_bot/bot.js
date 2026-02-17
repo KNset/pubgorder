@@ -444,7 +444,7 @@ bot.on('callback_query', async (query) => {
                    bot.sendMessage(chatId, "✅ **Order Received!**\nAdmin will process it shortly.");
                    
                    // Notify Admin
-                   const adminMsg = `🛒 **New Manual Order**\n👤 User: @${username}\n🎮 Game: ${pkg.game_name}\n📦 Pack: ${pkg.name}\n📝 Details: \`${details}\`\n💰 Paid: ${pkg.price}\n\n💰 Before: ${balBefore}\n💰 After: ${balAfter}`;
+                   const adminMsg = `🛒 **New Manual Order**\n👤 User: @${query.from.username}\n🎮 Game: ${pkg.game_name}\n📦 Pack: ${pkg.name}\n📝 Details: \`${details}\`\n💰 Paid: ${pkg.price}\n\n💰 Before: ${balBefore}\n💰 After: ${balAfter}`;
                    const adminMarkup = {
                        inline_keyboard: [
                            [{ text: "✅ Done", callback_data: `man_done_${userId}` }],
