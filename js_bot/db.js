@@ -229,7 +229,7 @@ async function get_game_packages(game_id) {
     }
 
     try {
-        const res = await query("SELECT * FROM game_packages WHERE game_id = $1 ORDER BY price ASC", [game_id]);
+        const res = await query("SELECT * FROM game_packages WHERE game_id = $1 ORDER BY id ASC", [game_id]);
         _USER_CACHE.set(key, { data: res.rows, ts: now });
         return res.rows;
     } catch (e) {
@@ -470,6 +470,7 @@ async function delete_game_package(id) {
         if (res.rows.length > 0) {
             const gid = res.rows[0].game_id;
             await query("DELETE FROM game_packages WHERE id = $1", [id]);
+            await query("DELETE FROM stocks WHERE package_id = $1", [String(id)]);
             _USER_CACHE.delete(`packages_${gid}`);
             return true;
         }
@@ -503,6 +504,7 @@ async function update_package_price(identifier, price) {
 async function delete_package(identifier) {
     try {
         await query("DELETE FROM packages WHERE identifier = $1", [identifier]);
+        await query("DELETE FROM stocks WHERE package_id = $1", [identifier]);
         _USER_CACHE.delete('legacy_packages');
         return true;
     } catch (e) {

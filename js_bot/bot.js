@@ -734,16 +734,50 @@ bot.on('callback_query', async (query) => {
                 const cnt = await db.get_stock_count(String(p.id));
                 inline_keyboard.push([
                     { text: `🔹 ${p.name}: ${cnt}`, callback_data: `adm_view_codes_${p.id}` },
-                    { text: "🗑 Clear", callback_data: `adm_clear_stk_${p.id}` }
+                    { text: "🗑 Clear", callback_data: `adm_clear_stk_${p.id}` },
+                    { text: "❌ Del Pkg", callback_data: `adm_del_pkg_stk_${p.id}` }
                 ]);
             }
         }
         
         inline_keyboard.push([{ text: "🗑 Delete This Game", callback_data: `adm_del_game_stk_${gid}` }]);
         inline_keyboard.push([{ text: "🔙 Back", callback_data: "admin_check_stock" }]);
-        bot.editMessageText(`📦 **Game Stock**\nClick package to view codes, or 🗑 to clear all stock:`, { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
+        bot.editMessageText(`📦 **Game Stock**\nClick package to view codes, 🗑 to clear stock, or ❌ to delete package:`, { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
     }
     
+    else if (data.startsWith('adm_del_pkg_stk_')) {
+        const pid = data.split('_')[4];
+        // Confirm
+        const inline_keyboard = [
+            [{ text: "✅ Yes, Delete Package", callback_data: `adm_conf_del_pkg_${pid}` }],
+            [{ text: "❌ Cancel", callback_data: "admin_check_stock" }]
+        ];
+        bot.editMessageText(`⚠️ **Delete Package?**\n\nThis will delete the package and ALL its stock.\nPackage ID: ${pid}\nAre you sure?`, { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
+    }
+    
+    else if (data.startsWith('adm_conf_del_pkg_')) {
+        const pid = data.split('_')[4];
+        // Get game id before deleting to redirect back?
+        // db.delete_game_package fetches it internally but doesn't return it easily.
+        // We can just redirect to main check stock.
+        
+        if (await db.delete_game_package(pid)) {
+             bot.answerCallbackQuery(query.id, { text: "✅ Package Deleted" });
+             bot.sendMessage(chatId, `✅ Package ${pid} deleted.`);
+        } else {
+             bot.answerCallbackQuery(query.id, { text: "❌ Failed" });
+        }
+        
+        // Go back
+        const games = await db.get_games();
+        const inline_keyboard = [];
+        games.forEach(g => {
+            inline_keyboard.push([{ text: `🎮 ${g.name}`, callback_data: `adm_chk_stk_g_${g.id}` }]);
+        });
+        inline_keyboard.push([{ text: "🔙 Back", callback_data: "admin_back_main" }]);
+        bot.editMessageText("📊 **Select Game to Check Stock:**", { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
+    }
+
     else if (data.startsWith('adm_del_game_stk_')) {
         const gid = data.split('_')[4];
         // Confirm deletion
