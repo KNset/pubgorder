@@ -447,89 +447,19 @@ bot.on('callback_query', async (query) => {
         bot.deleteMessage(chatId, msgId); // Remove confirmation menu
     }
     else if (data === 'back_to_games') {
-        // Re-show game list (copy from Games handler)
         const games = await db.get_games();
-        const inline_keyboard = [
-            [{ text: "🎮 PUBG UC (Auto)", callback_data: "game_pubg" }]
-        ];
+        const inline_keyboard = [];
         games.forEach(g => {
             if (g.name !== 'PUBG UC') {
                 inline_keyboard.push([{ text: `🎮 ${g.name}`, callback_data: `game_id_${g.id}` }]);
             }
         });
-        bot.editMessageText("🛒 **Select Game:**", { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
-    }
-});
-
-// Pre-Purchase (Legacy)
-bot.on('callback_query', async (query) => {
-    const data = query.data;
-    if (data.startsWith('pre_')) {
-        const pk = data.split('_')[1];
-        const packages = await db.get_packages();
-        const pack = packages[pk];
         
-        if (!pack) return bot.answerCallbackQuery(query.id, { text: "❌ Invalid Package" });
-        
-        const text = `❓ **ဝယ်ယူမှုကို အတည်ပြုပါ**\n\n📦 Pack: **${pack.name}**\n💵 ကျသင့်ငွေ: **${pack.price} MMK**\n\nတကယ်ဝယ်ယူမှာ သေချာပါသလား?`;
-        const inline_keyboard = [
-            [{ text: "✅ Confirm Purchase", callback_data: `buy_${pk}` }],
-            [{ text: "❌ Cancel", callback_data: "cancel_order" }]
-        ];
-        
-        bot.editMessageText(text, { chat_id: query.message.chat.id, message_id: query.message.message_id, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
-    }
-    else if (data === 'cancel_order') {
-        bot.editMessageText("❌ ဝယ်ယူမှုကို ဖျက်သိမ်းလိုက်ပါပြီ။", { chat_id: query.message.chat.id, message_id: query.message.message_id });
-    }
-});
-
-// Execute Purchase (Legacy)
-bot.on('callback_query', async (query) => {
-    const data = query.data;
-    // Fix conflict with buy_gp_ (New Game Purchase)
-    if (data.startsWith('buy_') && !data.startsWith('buy_gp_')) {
-        const pk = data.split('_')[1];
-        const userId = query.from.id;
-        const packages = await db.get_packages();
-        const pack = packages[pk];
-        
-        if (!pack) return bot.answerCallbackQuery(query.id, { text: "❌ Invalid Package" });
-        
-        const user = await db.get_user(userId);
-        
-        // Ensure numbers
-        const balance = Number(user.balance);
-        const price = Number(pack.price);
-        
-        if (balance < price) {
-            return bot.answerCallbackQuery(query.id, { text: `❌ Insufficient Balance\nYour Balance: ${balance}\nPrice: ${price}`, show_alert: true });
+        if (inline_keyboard.length === 0) {
+            bot.editMessageText("🛒 **No games available.**", { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' });
+        } else {
+            bot.editMessageText("🛒 **Select Game:**", { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
         }
-        
-        const balBefore = balance;
-        
-        const code = await db.get_and_use_stock(pk);
-        if (!code) {
-            return bot.answerCallbackQuery(query.id, { text: "⚠️ Stock ပြတ်နေပါသည်။", show_alert: true });
-        }
-        
-        await db.update_balance(userId, -price);
-        const balAfter = balBefore - price;
-        
-        await db.add_history(userId, pack.name, code);
-        
-        const successMsg = `✅ **Thank You for Purchasing!**\n\n📦 Package: **${pack.name}**\n🎟 Redeem Code: \`${code}\`\n\n💰 Price: \`${pack.price} MMK\`\n\n⚠️ Code can be used once.`;
-        
-        bot.sendMessage(userId, successMsg, { parse_mode: 'Markdown' });
-        bot.editMessageText("✅ **Purchased Successfully!**\nCheck your Private Messages for the code.", { chat_id: query.message.chat.id, message_id: query.message.message_id, parse_mode: 'Markdown' });
-        
-        // Notify Admins
-        const adminMsg = `🛒 **New Sale!**\n👤 User: ${query.from.username}\n📦 Pack: ${pack.name}\n🎟 Code: \`${code}\`\n\n💰 Before: ${balBefore}\n💰 After: ${balAfter}`;
-        const admins = await db.get_all_admins();
-        const allAdmins = new Set([...admins, ADMIN_ID]);
-        allAdmins.forEach(aid => {
-            bot.sendMessage(aid, adminMsg).catch(() => {});
-        });
     }
 });
 
