@@ -462,7 +462,8 @@ bot.on('callback_query', async (query) => {
                    const admins = await db.get_all_admins();
                    const allAdmins = new Set([...admins, ADMIN_ID]);
                    allAdmins.forEach(aid => {
-                       bot.sendMessage(aid, adminMsg, { reply_markup: adminMarkup, parse_mode: 'Markdown' });
+                       bot.sendMessage(aid, adminMsg, { reply_markup: adminMarkup, parse_mode: 'Markdown' })
+                          .catch(err => console.error(`Failed to notify admin ${aid}:`, err.message));
                    });
                });
            });
