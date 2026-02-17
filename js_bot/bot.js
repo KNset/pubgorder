@@ -424,7 +424,12 @@ bot.on('callback_query', async (query) => {
             return;
         }
         
-        // Manual Order Flow (If no stock)
+        // Check Game Type - If Token Game and No Stock, Error
+        if (pkg.game_type === 'token') {
+            return bot.answerCallbackQuery(query.id, { text: "⚠️ Stock ပြတ်နေပါသည် admin ကိုဆက်သွယ်ပါ။ @joe347664", show_alert: true });
+        }
+        
+        // Manual Order Flow (For Normal Games)
         await db.update_balance(userId, -price);
         const balAfter = balBefore - price;
         

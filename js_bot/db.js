@@ -516,7 +516,7 @@ async function delete_package(identifier) {
 async function get_game_package_by_id(package_id) {
     try {
         const res = await query(`
-            SELECT gp.*, g.name as game_name 
+            SELECT gp.*, g.name as game_name, g.game_type 
             FROM game_packages gp 
             JOIN games g ON gp.game_id = g.id 
             WHERE gp.id = $1
