@@ -415,7 +415,7 @@ bot.on('callback_query', async (query) => {
             bot.editMessageText("✅ **Success! Check PM.**", { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' });
             
             // Notify Admins (Auto Sale)
-            const adminMsg = `🛒 **New Sale (Auto)**\n👤 User:@ ${query.from.username || userId}\n📦 Pack: ${pkg.game_name} - ${pkg.name}\n🎟 Code: \`${code}\`\n\n💰 Before: ${balBefore}\n💰 After: ${balAfter}`;
+            const adminMsg = `🛒 **New Sale (Auto)**\n👤 User:@ ${user || userId}\n📦 Pack: ${pkg.game_name} - ${pkg.name}\n🎟 Code: \`${code}\`\n\n💰 Before: ${balBefore}\n💰 After: ${balAfter}`;
             const admins = await db.get_all_admins();
             const allAdmins = new Set([...admins, ADMIN_ID]);
             allAdmins.forEach(aid => {
