@@ -833,14 +833,14 @@ bot.on('callback_query', async (query) => {
         games.forEach(g => {
             inline_keyboard.push([{ text: `🎮 ${g.name}`, callback_data: `adm_game_${g.id}` }]);
         });
-        inline_keyboard.push([{ text: "➕ Add New Game", callback_data: "admin_add_game" }]);
+        inline_keyboard.push([{ text: "➕ Add New Token Game", callback_data: "admin_add_token_game" }]);
         inline_keyboard.push([{ text: "🔙 Back", callback_data: "admin_back_main" }]);
         
         bot.editMessageText("🎮 **Select Game to Manage:**", { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
     }
     
-    else if (data === 'admin_add_game') {
-        const promptMsg = await bot.sendMessage(chatId, "🎮 **Enter New Game Name:**", {
+    else if (data === 'admin_add_token_game') {
+        const promptMsg = await bot.sendMessage(chatId, "🎮 **Enter New Token Game Name (e.g., PUBG, Free Fire):**", {
             reply_markup: { force_reply: true }
         });
         
@@ -849,7 +849,7 @@ bot.on('callback_query', async (query) => {
             if (name) {
                 try {
                     await db.query("INSERT INTO games (name) VALUES ($1)", [name]);
-                    bot.sendMessage(chatId, `✅ **Game Added:** ${name}`);
+                    bot.sendMessage(chatId, `✅ **Token Game Added:** ${name}\nNow go to 'Manage Games' -> Select '${name}' -> 'Add Package' to set up redeem codes.`);
                 } catch (e) {
                     bot.sendMessage(chatId, "❌ Failed. Name might exist.");
                 }
