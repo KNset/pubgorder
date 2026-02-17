@@ -639,7 +639,7 @@ bot.onText(/\/checkstock/, async (msg) => {
     bot.sendMessage(msg.chat.id, report || "No stock found.", { parse_mode: 'Markdown' });
 });
 
-bot.onText(/\/add (.+)/, async (msg, match) => {
+bot.onText(/\/add ([\s\S]+)/, async (msg, match) => {
     if (!(await isAdmin(msg.from.id))) return;
     
     // Split by spaces, but respect lines if pasted
