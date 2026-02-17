@@ -144,28 +144,29 @@ async function init_db() {
 }
 
 async function get_user(user_id, username = null) {
+    const uidStr = String(user_id);
     const now = Date.now();
-    if (_USER_CACHE.has(user_id)) {
-        const cached = _USER_CACHE.get(user_id);
+    if (_USER_CACHE.has(uidStr)) {
+        const cached = _USER_CACHE.get(uidStr);
         if (now - cached.ts < CACHE_TTL) {
             return cached.data;
         }
     }
 
     try {
-        let res = await query("SELECT * FROM users WHERE user_id = $1", [user_id]);
+        let res = await query("SELECT * FROM users WHERE user_id = $1", [uidStr]);
         let user = res.rows[0];
 
         if (!user) {
-            res = await query("INSERT INTO users (user_id, username, balance) VALUES ($1, $2, 0) RETURNING *", [user_id, username]);
+            res = await query("INSERT INTO users (user_id, username, balance) VALUES ($1, $2, 0) RETURNING *", [uidStr, username]);
             user = res.rows[0];
         } else if (username && user.username !== username) {
             // Update username asynchronously if needed
-            query("UPDATE users SET username = $1 WHERE user_id = $2", [username, user_id]).catch(console.error);
+            query("UPDATE users SET username = $1 WHERE user_id = $2", [username, uidStr]).catch(console.error);
             user.username = username;
         }
 
-        _USER_CACHE.set(user_id, { data: user, ts: now });
+        _USER_CACHE.set(uidStr, { data: user, ts: now });
         return user;
     } catch (e) {
         console.error("get_user error:", e);
@@ -174,9 +175,10 @@ async function get_user(user_id, username = null) {
 }
 
 async function update_balance(user_id, amount) {
+    const uidStr = String(user_id);
     try {
-        await query("UPDATE users SET balance = balance + $1 WHERE user_id = $2", [amount, user_id]);
-        _USER_CACHE.delete(user_id); // Invalidate cache
+        await query("UPDATE users SET balance = balance + $1 WHERE user_id = $2", [amount, uidStr]);
+        _USER_CACHE.delete(uidStr); // Invalidate cache
         return true;
     } catch (e) {
         console.error("update_balance error:", e);
