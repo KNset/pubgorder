@@ -278,10 +278,11 @@ async function get_and_use_stock(package_id) {
 
 async function add_stock(package_id, code) {
     try {
-        await query("INSERT INTO stocks (package_id, code) VALUES ($1, $2)", [package_id, code]);
+        await query("INSERT INTO stocks (package_id, code) VALUES ($1, $2)", [package_id, code.trim()]);
         return true;
     } catch (e) {
-        return false; // Likely duplicate
+        console.error("add_stock error:", e.message);
+        return false; // Likely duplicate or error
     }
 }
 

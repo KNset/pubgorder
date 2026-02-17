@@ -672,16 +672,23 @@ bot.onText(/\/add ([\s\S]+)/, async (msg, match) => {
     
     let count = 0;
     let duplicates = 0;
+    const failedCodes = [];
     
     for (const code of codes) {
         if (await db.add_stock(packId, code)) {
             count++;
         } else {
             duplicates++;
+            if (failedCodes.length < 5) failedCodes.push(code);
         }
     }
     
-    bot.sendMessage(msg.chat.id, `📦 **Stock Added**\n📂 Package: **${packName}**\n✅ Added: ${count}\n⚠️ Duplicates: ${duplicates}`, { parse_mode: 'Markdown' });
+    let msg = `📦 **Stock Added**\n📂 Package: **${packName}**\n✅ Added: ${count}\n⚠️ Duplicates/Failed: ${duplicates}`;
+    if (failedCodes.length > 0) {
+        msg += `\n\n**Examples of Failed Codes:**\n` + failedCodes.map(c => `\`${c}\``).join('\n');
+    }
+    
+    bot.sendMessage(msg.chat.id, msg, { parse_mode: 'Markdown' });
 });
 
 // Admin Dashboard
