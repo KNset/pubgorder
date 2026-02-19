@@ -672,7 +672,7 @@ bot.on('callback_query', async (query) => {
                 const cnt = await db.get_stock_count(String(p.id));
                 inline_keyboard.push([
                     { text: `🔹 ${p.name}: ${cnt}`, callback_data: `adm_view_codes_${p.id}` },
-                    { text: "🗑 Clear", callback_data: `adm_clear_stk_${p.id}` },
+                    { text: "🗑 Clear Codes", callback_data: `adm_clear_stk_${p.id}` },
                     { text: "❌ Del Pkg", callback_data: `adm_del_pkg_stk_${p.id}` }
                 ]);
             }
@@ -680,7 +680,7 @@ bot.on('callback_query', async (query) => {
         
         inline_keyboard.push([{ text: "🗑 Delete This Game", callback_data: `adm_del_game_stk_${gid}` }]);
         inline_keyboard.push([{ text: "🔙 Back", callback_data: "admin_check_stock" }]);
-        bot.editMessageText(`📦 **Game Stock**\nClick package to view codes, 🗑 to clear stock, or ❌ to delete package:`, { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
+        bot.editMessageText(`📦 **Game Stock**\nClick package to view codes, 🗑 to clear codes, or ❌ to delete package:`, { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard }, parse_mode: 'Markdown' });
     }
     
     else if (data.startsWith('adm_del_pkg_stk_')) {
