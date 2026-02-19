@@ -242,7 +242,7 @@ async function get_game_packages(game_id) {
 
 async function get_stock_count(package_id) {
     try {
-        const res = await query("SELECT COUNT(*) FROM stocks WHERE package_id = $1", [package_id]);
+        const res = await query("SELECT COUNT(*) FROM stocks WHERE package_id = $1", [String(package_id)]);
         return parseInt(res.rows[0].count);
     } catch (e) {
         return 0;
@@ -448,10 +448,25 @@ async function add_game(name, type = 'token') {
 
 async function delete_game(id) {
     try {
+        // Fetch all package IDs for this game first
+        const pkgs = await query("SELECT id FROM game_packages WHERE game_id = $1", [id]);
+        
+        // Delete stock for each package
+        for (const row of pkgs.rows) {
+            await query("DELETE FROM stocks WHERE package_id = $1", [String(row.id)]);
+        }
+        
+        // Delete packages
+        await query("DELETE FROM game_packages WHERE game_id = $1", [id]);
+        
+        // Delete game
         await query("DELETE FROM games WHERE id = $1", [id]);
+        
         _USER_CACHE.delete('games_list');
+        _USER_CACHE.delete(`packages_${id}`);
         return true;
     } catch (e) {
+        console.error("delete_game error:", e);
         return false;
     }
 }
